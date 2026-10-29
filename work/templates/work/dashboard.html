@@ -1,0 +1,13 @@
+<h1>Личный кабинет</h1>
+<ul>
+    {% if user.is_staff %}
+    <li><a href="{% url 'site_list' %}">Объекты</a></li>
+    <li><a href="{% url 'worker_list' %}">Работники</a></li>
+    {% endif %}
+    <li><a href="{% url 'report_create' %}">Новый отчёт</a></li>
+</ul>
+
+<form action="{% url 'logout' %}" method="post">
+    {% csrf_token %}
+    <button type="submit">Выйти</button>
+</form>

@@ -1,0 +1,24 @@
+<h1>Работники</h1>
+
+<form method="get">
+  {{ filter.form.as_p }}
+  <button type="submit">Показать</button>
+  <a href="{% url 'worker_list' %}">Сбросить</a>
+</form>
+
+{% for worker in object_list %}
+  <div>
+    <b>{{ worker.name }}</b>, {{ worker.phone }}
+    <br>Объекты:
+    {% for site in worker.sites.all %}
+      {{ site.name }} ({{ site.address }}){% if not forloop.last %}, {% endif %}
+    {% empty %}
+      нет привязанных объектов
+    {% endfor %}
+  </div>
+  <hr>
+{% empty %}
+  <p>Работники не найдены.</p>
+{% endfor %}
+
+<p><a href="{% url 'dashboard' %}">Назад в кабинет</a></p>
