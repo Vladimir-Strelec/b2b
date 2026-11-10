@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Планы работы{% endblock %}
+{% block heading %}Планы работы{% endblock %}
+{% block content %}
+<div class="filters">
+  <a class="btn" href="{% url 'plan_create' %}">＋ Создать план</a>
+  <form method="get">
+    <div><label for="date">Дата</label><input id="date" type="date" name="date" value="{{ request.GET.date }}"></div>
+    <div><label for="worker">Работник</label><select id="worker" name="worker"><option value="">Все</option>{% for w in workers %}<option value="{{ w.pk }}" {% if request.GET.worker == w.pk|stringformat:"s" %}selected{% endif %}>{{ w.name }}</option>{% endfor %}</select></div>
+    <div><label for="site">Объект</label><select id="site" name="site"><option value="">Все</option>{% for s in sites %}<option value="{{ s.pk }}" {% if request.GET.site == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
+    <div><label for="site_type">Тип объекта</label><select id="site_type" name="site_type"><option value="">Все</option>{% for value,label in site_types %}<option value="{{ value }}" {% if request.GET.site_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label for="status">Статус</label><select id="status" name="status"><option value="">Все</option>{% for value,label in statuses %}<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <button class="btn" type="submit">Фильтровать</button><a class="btn btn-light" href="{% url 'plan_list' %}">Сбросить</a>
+  </form>
+</div>
+<div class="table-wrap"><table><thead><tr><th>Дата</th><th>Объект</th><th>Работник</th><th>Состояние</th><th></th></tr></thead><tbody>
+{% for plan in object_list %}<tr><td>{{ plan.work_date|date:"d.m.Y" }}</td><td>{{ plan.site.name }} <span class="muted">· {{ plan.site.get_site_type_display }}</span></td><td>{{ plan.worker.name }}</td><td><span class="status status-{{ plan.status }}">{% if plan.status == "approved" %}✓{% elif plan.status == "revision" %}✕{% else %}!{% endif %} {{ plan.get_status_display }}</span></td><td><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть</a></td></tr>
+{% empty %}<tr><td colspan="5" class="muted">Планов пока нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

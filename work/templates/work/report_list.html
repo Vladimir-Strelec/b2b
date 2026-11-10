@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Отчёты{% endblock %}
+{% block heading %}Отчёты{% endblock %}
+{% block content %}
+  <div class="filters">
+    <form method="get">
+      {{ filter.form.as_div }}
+      <div>
+        <label for="group">Группировка</label>
+        <select name="group" id="group">
+          <option value="date" {% if group == "date" %}selected{% endif %}>По дате</option>
+          <option value="site" {% if group == "site" %}selected{% endif %}>По объектам</option>
+        </select>
+      </div>
+      <button type="submit" class="btn">Показать</button>
+      <a class="btn btn-light" href="{% url 'report_list' %}">Сбросить</a>
+    </form>
+  </div>
+
+  {% for key, items in groups %}
+    <section class="group">
+      <h2 class="group-title">
+        {% if group == "site" %}{{ key.name }} <span class="muted">· {{ key.address }}</span>{% else %}{{ key|date:"j E Y, l" }}{% endif %}
+        <span class="badge">{{ items|length }}</span>
+      </h2>
+
+      <div class="rows">
+        {% for r in items %}
+          <a class="row" href="{{ r.detail_url }}">
+            <img class="thumb" src="{{ r.photo_url }}" alt="" loading="lazy">
+            <div class="row-main">
+              <div class="row-top">
+                {% if group == "site" %}
+                  <b>{{ r.created_at|date:"d.m.Y H:i" }}</b>
+                  <span class="muted">{{ r.worker.name }}</span>
+                {% else %}
+                  <b>{{ r.site.name }}</b>
+                  <span class="muted">{{ r.created_at|date:"H:i" }} · {{ r.worker.name }}</span>
+                {% endif %}
+                {% if r.status %}<span class="status status-{{ r.status }}">{% if r.status == "approved" %}✓{% elif r.status == "revision" %}✕{% else %}!{% endif %} {{ r.status_label }}</span>{% endif %}
+              </div>
+              <div class="clamp">{{ r.description }}</div>
+              {% if r.submission_count > 1 %}<small class="muted report-volume">Отправок: {{ r.submission_count }} · фотографий: {{ r.photo_count }}</small>{% endif %}
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  {% empty %}
+    <p class="muted">Отчётов не найдено.</p>
+  {% endfor %}
+{% endblock %}

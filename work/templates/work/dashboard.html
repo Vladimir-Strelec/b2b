@@ -1,13 +1,16 @@
-<h1>Личный кабинет</h1>
-<ul>
+{% extends "base.html" %}
+{% block title %}Главная{% endblock %}
+{% block heading %}Личный кабинет{% endblock %}
+{% block content %}
+  <div class="grid">
     {% if user.is_staff %}
-    <li><a href="{% url 'site_list' %}">Объекты</a></li>
-    <li><a href="{% url 'worker_list' %}">Работники</a></li>
+      <a class="tile" href="{% url 'plan_create' %}">Создать план работы<small>Назначить объект и задание работнику</small></a>
+      <a class="tile" href="{% url 'plan_list' %}">Планы работы<small>{{ needs_review }} ожидают проверки</small></a>
+      <a class="tile" href="{% url 'site_list' %}">Объекты<small>Адреса и привязанные работники</small></a>
+      <a class="tile" href="{% url 'worker_list' %}">Работники<small>Контакты и объекты</small></a>
+      <a class="tile" href="{% url 'report_list' %}">Отчёты<small>Фото и описания работ</small></a>
+    {% elif user.worker %}
+      <a class="tile" href="{% url 'worker_plans' %}">Мои планы работы<small>{{ today_plans|length }} заданий на сегодня</small></a>
     {% endif %}
-    <li><a href="{% url 'report_create' %}">Новый отчёт</a></li>
-</ul>
-
-<form action="{% url 'logout' %}" method="post">
-    {% csrf_token %}
-    <button type="submit">Выйти</button>
-</form>
+  </div>
+{% endblock %}

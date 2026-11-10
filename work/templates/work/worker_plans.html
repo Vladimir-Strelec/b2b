@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Мои планы работы{% endblock %}
+{% block heading %}Мои планы работы{% endblock %}
+{% block content %}
+<form method="get" class="filters"><div><label for="date">История по дате</label><input id="date" type="date" name="date" value="{{ selected_date }}"></div><div><label for="status">Состояние</label><select id="status" name="status"><option value="">Все состояния</option>{% for value,label in statuses %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><button class="btn" type="submit">Показать</button><a class="btn btn-light" href="{% url 'worker_plans' %}">Вся история</a></form>
+{% regroup plans by work_date as date_groups %}
+{% for day in date_groups %}
+<section class="group"><h2 class="group-title">{{ day.grouper|date:"j E Y, l" }}{% if day.grouper == today %}<span class="badge">Сегодня · {{ day.list|length }} объектов</span>{% else %}<span class="badge">{{ day.list|length }} объектов</span>{% endif %}</h2>
+<div class="table-wrap"><table><thead><tr><th>Объект</th><th>Адрес</th><th>Состояние</th><th></th></tr></thead><tbody>
+{% for plan in day.list %}<tr><td><b>{{ plan.site.name }}</b><div class="muted">Тип {{ plan.site.get_site_type_display }}</div></td><td>{{ plan.site.address }}</td><td><span class="status status-{{ plan.status }}">{% if plan.status == "approved" %}✓{% elif plan.status == "revision" %}✕{% else %}!{% endif %} {{ plan.get_status_display }}</span></td><td><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть задание</a></td></tr>{% endfor %}
+</tbody></table></div></section>
+{% empty %}<p class="muted">На выбранную дату заданий нет.</p>{% endfor %}
+{% endblock %}

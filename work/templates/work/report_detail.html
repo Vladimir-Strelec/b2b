@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Отчёт{% endblock %}
+{% block heading %}Отчёт от {{ object.created_at|date:"d.m.Y" }}{% endblock %}
+{% block content %}
+  <div class="detail-head">
+    <div class="actions">
+      <a class="btn btn-light btn-sm" href="{% url 'report_list' %}">← Все отчёты</a>
+      <a class="btn btn-light btn-sm" href="{% url 'site_detail' object.site.pk %}">К объекту</a>
+    </div>
+    <a class="btn btn-sm" href="{{ object.photo.url }}" target="_blank">Фото в полном размере</a>
+  </div>
+
+  <div class="card">
+    <a href="{{ object.photo.url }}" target="_blank">
+      <img class="photo-full" src="{{ object.photo.url }}" alt="Фото с объекта">
+    </a>
+  </div>
+
+  <div class="card">
+    <dl class="kv">
+      <dt>Объект</dt>
+      <dd><a class="link" href="{% url 'site_detail' object.site.pk %}">{{ object.site.name }}</a>, {{ object.site.address }}</dd>
+      <dt>Работник</dt>
+      <dd>{{ object.worker.name }} <span class="muted">· {{ object.worker.phone }}</span></dd>
+      <dt>Дата и время</dt>
+      <dd>{{ object.created_at|date:"d.m.Y H:i" }}</dd>
+      <dt>Описание</dt>
+      <dd>{{ object.description|linebreaksbr }}</dd>
+    </dl>
+  </div>
+{% endblock %}

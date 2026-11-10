@@ -1,18 +1,13 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Вход</title>
-</head>
-<body>
-  <h1>Вход</h1>
-
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <input type="hidden" name="next" value="{{ next }}">
-    <button type="submit">Войти</button>
-  </form>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Вход{% endblock %}
+{% block auth %}
+  <div class="card">
+    <h1>Вход</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_div }}
+      <input type="hidden" name="next" value="{{ next }}">
+      <p><button type="submit" class="btn" style="width:100%">Войти</button></p>
+    </form>
+  </div>
+{% endblock %}

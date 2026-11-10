@@ -1,6 +1,12 @@
-<h1>Новый отчёт</h1>
-<form method="post" enctype="multipart/form-data">
-  {% csrf_token %}
-  {{ form.as_p }}
-  <button type="submit">Отправить</button>
-</form>
+{% extends "base.html" %}
+{% block title %}Новый отчёт{% endblock %}
+{% block heading %}Новый отчёт{% endblock %}
+{% block content %}
+  <div class="card form-card">
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.as_div }}
+      <button type="submit" class="btn">Отправить</button>
+    </form>
+  </div>
+{% endblock %}

@@ -1,0 +1,61 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <title>{% block title %}Кабинет{% endblock %}</title>
+    <link href="{% static 'work/css/app.css' %}" rel="stylesheet">
+</head>
+<body>
+<div aria-hidden="true" class="bg"></div>
+
+{% if user.is_authenticated %}
+<div class="app">
+    <aside class="sidebar">
+        <div class="brand">Объекты</div>
+        <nav>
+            <a class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
+               href="{% url 'dashboard' %}">Главная</a>
+            {% if user.is_staff %}
+
+            <a class="{% if request.resolver_match.url_name == 'plan_list' or request.resolver_match.url_name == 'plan_create' or request.resolver_match.url_name == 'plan_edit' %}active{% endif %}"
+               href="{% url 'plan_list' %}">Планы работы</a>
+            <a class="{% if request.resolver_match.url_name == 'site_list' %}active{% endif %}"
+               href="{% url 'site_list' %}">Объекты</a>
+            <a class="{% if request.resolver_match.url_name == 'worker_list' %}active{% endif %}"
+               href="{% url 'worker_list' %}">Работники</a>
+            <a class="{% if request.resolver_match.url_name == 'report_list' %}active{% endif %}"
+               href="{% url 'report_list' %}">Отчёты</a>
+            {% endif %}
+            {% if user.worker and not user.is_staff %}
+            <a class="{% if request.resolver_match.url_name == 'report_create' %}active{% endif %}"
+               href="{% url 'worker_plans' %}">Мои планы</a>
+            {% endif %}
+        </nav>
+        <div class="sidebar-foot">
+            <span class="user">{{ user.username }}</span>
+            <form action="{% url 'logout' %}" method="post">
+                {% csrf_token %}
+                <button class="btn btn-ghost" type="submit">Выйти</button>
+            </form>
+        </div>
+    </aside>
+
+    <main class="content">
+        <header class="topbar"><h1>{% block heading %}{% endblock %}</h1></header>
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+        {% block content %}{% endblock %}
+    </main>
+</div>
+{% else %}
+<main class="auth">
+    {% block auth %}{% endblock %}
+</main>
+{% endif %}
+
+<script defer src="{% static 'work/js/app.js' %}?v=20261110-6"></script>
+</body>
+</html>

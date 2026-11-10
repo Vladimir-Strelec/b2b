@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Редактировать план{% else %}Новый план работы{% endif %}{% endblock %}
+{% block heading %}{% if editing %}Редактировать план{% else %}Новый план работы{% endif %}{% endblock %}
+{% block content %}
+<div class="card form-card">
+  <form method="post" enctype="multipart/form-data" id="plan-form">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {{ form.as_div }}
+    <section class="form-section">
+      <h2>PDF с информацией (до 20 файлов)</h2>
+      {% if editing and object.documents.exists %}<ul class="document-list">{% for doc in object.documents.all %}<li><a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"plans/" }}</a></li>{% endfor %}</ul>{% endif %}
+      <div id="document-inputs" data-existing-count="{% if editing %}{{ object.documents.count }}{% else %}0{% endif %}">
+        <div class="file-row"><label>Выберите файл <input type="file" name="documents" accept="application/pdf,.pdf"></label><span class="file-name muted"></span></div>
+      </div>
+      <button type="button" class="btn btn-light btn-sm" id="add-document">＋ Добавить PDF</button>
+      <small class="muted" id="document-count">Добавлено: {% if editing %}{{ object.documents.count }}{% else %}0{% endif %} из 20</small>
+    </section>
+    <button type="submit" class="btn">{% if editing %}Сохранить изменения{% else %}Создать план{% endif %}</button>
+    <a class="btn btn-light" href="{% if editing %}{% url 'plan_detail' object.pk %}{% else %}{% url 'plan_list' %}{% endif %}">Отмена</a>
+  </form>
+</div>
+{% endblock %}

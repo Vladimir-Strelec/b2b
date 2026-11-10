@@ -2,7 +2,7 @@ from django import forms
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 
-from .models import Report, Site, Worker
+from .models import Report, Site, Worker, WorkPlan, PlanDocument, PhotoCategory, WorkSubmission, WorkPhoto
 
 User = get_user_model()
 
@@ -52,7 +52,7 @@ class WorkerAdmin(admin.ModelAdmin):
 
 @admin.register(Site)
 class SiteAdmin(admin.ModelAdmin):
-    list_display = ("name", "address")
+    list_display = ("name", "address", "site_type")
     list_filter = ("workers",)
     search_fields = ("name", "address")
     filter_horizontal = ("workers",)
@@ -62,3 +62,33 @@ class SiteAdmin(admin.ModelAdmin):
 class ReportAdmin(admin.ModelAdmin):
     list_display = ("site", "worker", "created_at")
     list_filter = ("site", "worker", "created_at")
+
+
+class PlanDocumentInline(admin.TabularInline):
+    model = PlanDocument
+    extra = 0
+
+
+@admin.register(WorkPlan)
+class WorkPlanAdmin(admin.ModelAdmin):
+    list_display = ("work_date", "site", "worker", "status")
+    list_filter = ("work_date", "status", "site", "worker")
+    search_fields = ("site__name", "worker__name", "description")
+    inlines = (PlanDocumentInline,)
+
+
+@admin.register(PhotoCategory)
+class PhotoCategoryAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active", "order")
+    list_editable = ("is_active", "order")
+
+
+class WorkPhotoInline(admin.TabularInline):
+    model = WorkPhoto
+    extra = 0
+
+
+@admin.register(WorkSubmission)
+class WorkSubmissionAdmin(admin.ModelAdmin):
+    list_display = ("plan", "created_at")
+    inlines = (WorkPhotoInline,)

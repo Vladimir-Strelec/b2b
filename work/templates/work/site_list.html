@@ -1,24 +1,39 @@
-<h1>Объекты</h1>
-
-<form method="get">
-  {{ filter.form.as_p }}
-  <button type="submit">Показать</button>
-  <a href="{% url 'site_list' %}">Сбросить</a>
-</form>
-
-{% for site in object_list %}
-  <div>
-    <b>{{ site.name }}</b>, {{ site.address }}
-    <br>Работники:
-    {% for w in site.workers.all %}
-      {{ w.name }}{% if not forloop.last %}, {% endif %}
-    {% empty %}
-      нет привязанных работников
-    {% endfor %}
+{% extends "base.html" %}
+{% block title %}Объекты{% endblock %}
+{% block heading %}Объекты{% endblock %}
+{% block content %}
+  <div class="filters">
+    <a class="btn" href="{% url 'site_create' %}">+ Добавить объект</a>
+    <form method="get">
+      {{ filter.form.as_div }}
+      <button type="submit" class="btn">Показать</button>
+      <a class="btn btn-light" href="{% url 'site_list' %}">Сбросить</a>
+    </form>
   </div>
-  <hr>
-{% empty %}
-  <p>Объекты не найдены.</p>
-{% endfor %}
 
-<p><a href="{% url 'dashboard' %}">Назад в кабинет</a></p>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Название</th><th>Тип</th><th>Адрес</th><th>Работники</th><th>Отчёты</th><th></th></tr></thead>
+      <tbody>
+      {% for site in object_list %}
+        <tr>
+          <td><a class="link" href="{% url 'site_detail' site.pk %}"><b>{{ site.name }}</b></a></td>
+          <td>{{ site.get_site_type_display }}</td>
+          <td>{{ site.address }}</td>
+          <td>{% for w in site.workers.all %}{{ w.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted">нет</span>{% endfor %}</td>
+          <td><span class="badge">{{ site.legacy_report_count|add:site.submission_count }}</span></td>
+          <td class="nowrap">
+            <div class="actions">
+              <a class="btn btn-sm" href="{% url 'site_detail' site.pk %}">Открыть</a>
+              <a class="btn btn-light btn-sm" href="{% url 'site_edit' site.pk %}">Изменить</a>
+              <a class="btn btn-danger btn-sm" href="{% url 'site_delete' site.pk %}">Удалить</a>
+            </div>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="muted">Объекты не найдены.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Удаление{% endblock %}
+{% block heading %}Удаление{% endblock %}
+{% block content %}
+  <div class="card form-card">
+    <p>Удалить «{{ object }}»?</p>
+    <p class="muted">{{ warning }}</p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Да, удалить</button>
+      <a class="btn btn-light" href="{% url back %}">Отмена</a>
+    </form>
+  </div>
+{% endblock %}

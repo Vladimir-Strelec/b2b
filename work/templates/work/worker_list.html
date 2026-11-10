@@ -1,24 +1,51 @@
-<h1>Работники</h1>
+{% extends "base.html" %}
+{% block title %}Работники{% endblock %}
+{% block heading %}Работники{% endblock %}
+{% block content %}
+<div class="filters">
+    <a class="btn" href="{% url 'worker_create' %}">+ Добавить работника</a>
+    <form method="get">
+        {{ filter.form.as_div }}
+        <button class="btn" type="submit">Показать</button>
+        <a class="btn btn-light" href="{% url 'worker_list' %}">Сбросить</a>
+    </form>
+</div>
 
-<form method="get">
-  {{ filter.form.as_p }}
-  <button type="submit">Показать</button>
-  <a href="{% url 'worker_list' %}">Сбросить</a>
-</form>
-
-{% for worker in object_list %}
-  <div>
-    <b>{{ worker.name }}</b>, {{ worker.phone }}
-    <br>Объекты:
-    {% for site in worker.sites.all %}
-      {{ site.name }} ({{ site.address }}){% if not forloop.last %}, {% endif %}
-    {% empty %}
-      нет привязанных объектов
-    {% endfor %}
-  </div>
-  <hr>
-{% empty %}
-  <p>Работники не найдены.</p>
-{% endfor %}
-
-<p><a href="{% url 'dashboard' %}">Назад в кабинет</a></p>
+<div class="table-wrap">
+    <table>
+        <thead>
+        <tr>
+            <th>Имя</th>
+            <th>Телефон</th>
+            <th>Объекты</th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for worker in object_list %}
+        <tr>
+            <td><b>{{ worker.name }}</b></td>
+            <td>{{ worker.phone }}</td>
+            <td>
+                {% for s in worker.sites.all %}
+                    <a class="link" href="{% url 'site_detail' s.pk %}">{{ s.name }}</a>{% if not forloop.last %}, {% endif %}
+                {% empty %}
+                    <span class="muted">нет</span>
+                {% endfor %}
+            </td>
+            <td class="nowrap">
+                <div class="actions">
+                    <a class="btn btn-light btn-sm" href="{% url 'worker_edit' worker.pk %}">Изменить</a>
+                    <a class="btn btn-danger btn-sm" href="{% url 'worker_delete' worker.pk %}">Удалить</a>
+                </div>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td class="muted" colspan="4">Работники не найдены.</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
