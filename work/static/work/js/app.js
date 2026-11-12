@@ -51,13 +51,154 @@
       var area = field.parentElement;
       var label = area.querySelector(".photo-upload-control");
       var filename = area.querySelector(".photo-upload-filename");
-      if (!label || !filename) return;
+      var preview = area.querySelector(".photo-upload-preview");
+      var camera = area.querySelector(".photo-camera-icon");
+      if (!label || !filename || !preview || !camera) return;
       if (field.files && field.files.length) {
-        filename.textContent = field.files[0].name;
+        var photo = field.files[0];
+        if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+        preview.dataset.objectUrl = URL.createObjectURL(photo);
+        preview.src = preview.dataset.objectUrl;
+        preview.hidden = false;
+        camera.hidden = true;
+        label.querySelector(".photo-upload-title").textContent = "Заменить фотографию";
+        filename.textContent = photo.name;
         label.classList.add("has-file");
       } else {
+        if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+        delete preview.dataset.objectUrl;
+        preview.removeAttribute("src");
+        preview.hidden = true;
+        camera.hidden = false;
+        label.querySelector(".photo-upload-title").textContent = "Добавить фотографию";
         filename.textContent = "Нажмите, чтобы выбрать файл";
         label.classList.remove("has-file");
+      }
+    });
+  });
+})();
+
+// Keep selected work photos in place when a submission has validation errors.
+(function () {
+  var form = document.getElementById("submission-form");
+  if (!form) return;
+  var feedback = document.getElementById("submission-form-feedback");
+
+  function clearErrors() {
+    form.querySelectorAll(".is-invalid").forEach(function (field) {
+      field.classList.remove("is-invalid");
+      field.removeAttribute("aria-invalid");
+    });
+    form.querySelectorAll(".submission-inline-error").forEach(function (error) { error.remove(); });
+    feedback.hidden = true;
+    feedback.textContent = "";
+  }
+  function markInvalid(field, message) {
+    if (!field) return;
+    field.classList.add("is-invalid");
+    field.setAttribute("aria-invalid", "true");
+    var host;
+    if (field.classList.contains("photo-file-input")) {
+      host = field.closest(".photo-upload-area");
+      var label = host && host.querySelector(".photo-upload-control");
+      if (label) label.classList.add("is-invalid");
+    } else {
+      host = field.parentElement;
+    }
+    var error = document.createElement("small");
+    error.className = "submission-inline-error";
+    error.textContent = message;
+    host.appendChild(error);
+  }
+  function showFeedback(message) {
+    feedback.textContent = message;
+    feedback.hidden = false;
+  }
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    clearErrors();
+    var invalid = [];
+    form.querySelectorAll(".photo-entry").forEach(function (entry) {
+      var image = entry.querySelector(".photo-file-input");
+      var description = entry.querySelector(".photo-description-input");
+      if (image && !(image.files && image.files.length) && entry.dataset.hasSavedImage !== "true") {
+        markInvalid(image, "Добавьте фотографию в это поле.");
+        invalid.push(image);
+      }
+      if (description && !description.value.trim()) {
+        markInvalid(description, "Опишите, что сделано на этом фото.");
+        invalid.push(description);
+      }
+    });
+    if (invalid.length) {
+      showFeedback("Заполните выделенные поля. Выбранные фотографии останутся на месте.");
+      invalid[0].scrollIntoView({behavior: "smooth", block: "center"});
+      invalid[0].focus({preventScroll: true});
+      return;
+    }
+
+    var submitButton = form.querySelector('button[type="submit"]');
+    var originalLabel = submitButton ? submitButton.textContent : "";
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Отправка…";
+    }
+    fetch(form.action || window.location.href, {
+      method: "POST",
+      body: new FormData(form),
+      credentials: "same-origin",
+      headers: {"X-Requested-With": "XMLHttpRequest"}
+    }).then(function (response) {
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return null;
+      }
+      return response.text();
+    }).then(function (html) {
+      if (html === null) return;
+      var parsed = new DOMParser().parseFromString(html, "text/html");
+      var returnedForm = parsed.getElementById("submission-form");
+      if (!returnedForm) {
+        showFeedback("Отчёт не отправлен. Проверьте соединение и попробуйте ещё раз.");
+        return;
+      }
+      var globalErrors = [];
+      returnedForm.querySelectorAll(".errorlist").forEach(function (list) {
+        var messages = Array.from(list.querySelectorAll("li")).map(function (li) { return li.textContent.trim(); }).filter(Boolean);
+        if (!messages.length) return;
+        var fieldName = null;
+        if (!list.classList.contains("nonfield") && !list.classList.contains("nonform")) {
+          var parent = list.parentElement;
+          while (parent && parent !== returnedForm) {
+            var controls = parent.querySelectorAll('input[name], select[name], textarea[name]');
+            if (controls.length === 1) {
+              fieldName = controls[0].name;
+              break;
+            }
+            parent = parent.parentElement;
+          }
+        }
+        if (fieldName) {
+          var currentField = Array.from(form.querySelectorAll('[name]')).find(function (field) { return field.name === fieldName; });
+          messages.forEach(function (message) { markInvalid(currentField, message); });
+        } else {
+          globalErrors = globalErrors.concat(messages);
+        }
+      });
+      globalErrors = Array.from(new Set(globalErrors));
+      showFeedback(globalErrors.length ? globalErrors.join(" ") : "Отчёт не отправлен. Проверьте выделенные поля.");
+      var firstInvalid = form.querySelector(".is-invalid");
+      if (firstInvalid) {
+        firstInvalid.scrollIntoView({behavior: "smooth", block: "center"});
+        firstInvalid.focus({preventScroll: true});
+      }
+    }).catch(function () {
+      showFeedback("Не удалось отправить отчёт. Проверьте соединение; выбранные фото и описания сохранены.");
+    }).finally(function () {
+      if (submitButton && document.body.contains(submitButton)) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
       }
     });
   });
@@ -170,19 +311,49 @@
   });
 })();
 
-// Live report search by object name and number.
+// Live report search by object name, number, and address.
 (function () {
   var form = document.getElementById("report-filter-form");
   var results = document.getElementById("report-results");
   if (!form || !results) return;
-  var searchFields = ['site_name', 'site_number'].map(function (name) {
-    return form.querySelector('[name="' + name + '"]');
-  }).filter(Boolean);
-  if (!searchFields.length) return;
+  var input = form.querySelector('[name="site_search"]');
+  var panel = form.querySelector(".site-suggestions");
+  var toggle = form.querySelector(".site-search-toggle");
+  var optionsNode = document.getElementById("report-site-options");
+  if (!input || !panel || !toggle || !optionsNode) return;
+  var sites = JSON.parse(optionsNode.textContent || "[]");
 
   var timer = null;
   var controller = null;
-  function refreshReports() {
+  function hideSuggestions() {
+    panel.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+  }
+  function showSuggestions() {
+    var query = input.value.trim().toLocaleLowerCase();
+    panel.replaceChildren();
+    sites.filter(function (site) {
+      var searchable = [site.name, site.object_number, site.address].join(" ").toLocaleLowerCase();
+      return !query || searchable.includes(query);
+    }).slice(0, 100).forEach(function (site) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "site-suggestion";
+      button.textContent = site.name;
+      var detail = document.createElement("small");
+      detail.textContent = (site.object_number ? "№ " + site.object_number + " · " : "") + site.address;
+      button.appendChild(detail);
+      button.addEventListener("click", function () {
+        input.value = site.object_number || site.name;
+        hideSuggestions();
+        refreshReports(false);
+      });
+      panel.appendChild(button);
+    });
+    panel.hidden = panel.childElementCount === 0;
+    toggle.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
+  }
+  function refreshReports(showOptions) {
     var params = new URLSearchParams();
     new FormData(form).forEach(function (value, key) {
       if (String(value).trim()) params.set(key, value);
@@ -199,43 +370,84 @@
         results.replaceWith(freshResults);
         results = freshResults;
         window.history.replaceState(null, "", url);
+        if (showOptions) showSuggestions();
+        else hideSuggestions();
       })
       .catch(function (error) {
         if (error.name !== "AbortError") window.location.assign(url);
       });
   }
 
-  searchFields.forEach(function (field) {
-    field.addEventListener("input", function () {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(refreshReports, 250);
-    });
+  input.addEventListener("input", function () {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(function () { refreshReports(true); }, 250);
   });
   form.querySelectorAll("select").forEach(function (field) {
     field.addEventListener("change", function () {
       window.clearTimeout(timer);
-      refreshReports();
+      refreshReports(false);
     });
+  });
+  form.querySelectorAll('input[type="date"]').forEach(function (field) {
+    field.addEventListener("change", function () { refreshReports(false); });
   });
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     window.clearTimeout(timer);
-    refreshReports();
+    refreshReports(false);
+  });
+  toggle.addEventListener("click", function () {
+    input.value = "";
+    showSuggestions();
+    input.focus();
+  });
+  document.addEventListener("click", function (event) {
+    if (!form.contains(event.target)) hideSuggestions();
   });
 })();
 
-// Filter work plans as the object number is typed.
+// Filter work plans by object name, number, or address.
 (function () {
   var form = document.getElementById("plan-filter-form");
   var results = document.getElementById("plan-results");
-  var liveInputs = form ? ['site_number', 'site_name', 'address'].map(function (name) {
-    return form.querySelector('[name="' + name + '"]');
-  }).filter(Boolean) : [];
-  if (!form || !results || !liveInputs.length) return;
+  var input = form && form.querySelector('[name="site_search"]');
+  var panel = form && form.querySelector(".site-suggestions");
+  var toggle = form && form.querySelector(".site-search-toggle");
+  var optionsNode = document.getElementById("plan-site-options");
+  if (!form || !results || !input || !panel || !toggle || !optionsNode) return;
+  var sites = JSON.parse(optionsNode.textContent || "[]");
 
   var timer = null;
   var controller = null;
-  function refreshPlans() {
+  function hideSuggestions() {
+    panel.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+  }
+  function showSuggestions() {
+    var query = input.value.trim().toLocaleLowerCase();
+    panel.replaceChildren();
+    sites.filter(function (site) {
+      var searchable = [site.name, site.object_number, site.address].join(" ").toLocaleLowerCase();
+      return !query || searchable.includes(query);
+    }).slice(0, 100).forEach(function (site) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "site-suggestion";
+      button.textContent = site.name;
+      var detail = document.createElement("small");
+      detail.textContent = (site.object_number ? "№ " + site.object_number + " · " : "") + site.address;
+      button.appendChild(detail);
+      button.addEventListener("click", function () {
+        input.value = site.object_number || site.name;
+        hideSuggestions();
+        refreshPlans(false);
+      });
+      panel.appendChild(button);
+    });
+    panel.hidden = panel.childElementCount === 0;
+    toggle.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
+  }
+  function refreshPlans(showOptions) {
     var params = new URLSearchParams();
     new FormData(form).forEach(function (value, key) {
       if (String(value).trim()) params.set(key, value);
@@ -252,28 +464,39 @@
         results.replaceWith(freshResults);
         results = freshResults;
         window.history.replaceState(null, "", url);
+        if (showOptions) showSuggestions();
+        else hideSuggestions();
       })
       .catch(function (error) {
         if (error.name !== "AbortError") window.location.assign(url);
       });
   }
 
-  liveInputs.forEach(function (input) {
-    input.addEventListener("input", function () {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(refreshPlans, 250);
-    });
+  input.addEventListener("input", function () {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(function () { refreshPlans(true); }, 250);
   });
   form.querySelectorAll("select").forEach(function (input) {
     input.addEventListener("change", function () {
       window.clearTimeout(timer);
-      refreshPlans();
+      refreshPlans(false);
     });
+  });
+  form.querySelectorAll('input[type="date"]').forEach(function (input) {
+    input.addEventListener("change", function () { refreshPlans(false); });
   });
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     window.clearTimeout(timer);
-    refreshPlans();
+    refreshPlans(false);
+  });
+  toggle.addEventListener("click", function () {
+    input.value = "";
+    showSuggestions();
+    input.focus();
+  });
+  document.addEventListener("click", function (event) {
+    if (!form.contains(event.target)) hideSuggestions();
   });
 })();
 
@@ -386,6 +609,168 @@
   });
 })();
 
+// Validate object forms before upload and keep the selected files on server errors.
+(function () {
+  var form = document.getElementById("site-form");
+  if (!form) return;
+  var feedback = document.getElementById("site-form-feedback");
+
+  function clearErrors() {
+    form.querySelectorAll(".is-invalid").forEach(function (field) {
+      field.classList.remove("is-invalid");
+      field.removeAttribute("aria-invalid");
+    });
+    form.querySelectorAll(".site-inline-error").forEach(function (error) { error.remove(); });
+    feedback.hidden = true;
+    feedback.textContent = "";
+  }
+  function markInvalid(field, message) {
+    if (!field) return;
+    field.classList.add("is-invalid");
+    field.setAttribute("aria-invalid", "true");
+    var container = field.closest(".photo-requirement-row, .file-row") || field.parentElement;
+    var error = document.createElement("small");
+    error.className = "site-inline-error";
+    error.textContent = message;
+    container.appendChild(error);
+  }
+  function showFeedback(message) {
+    feedback.textContent = message;
+    feedback.hidden = false;
+  }
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    clearErrors();
+    var invalid = [];
+    [
+      [form.elements.object_number, "Введите номер объекта."],
+      [form.elements.name, "Введите название объекта."],
+      [form.elements.address, "Введите адрес объекта."],
+      [form.elements.site_type, "Выберите тип объекта."],
+    ].forEach(function (item) {
+      if (item[0] && !String(item[0].value).trim()) {
+        markInvalid(item[0], item[1]);
+        invalid.push(item[0]);
+      }
+    });
+
+    var requirementList = document.getElementById("photo-requirements");
+    if (requirementList) {
+      var rows = Array.from(requirementList.querySelectorAll(".photo-requirement-row")).filter(function (row) {
+        var deletion = row.querySelector('input[name$="-DELETE"]');
+        return !row.hidden && (!deletion || !deletion.checked);
+      });
+      if (!rows.length) {
+        var addRequirement = document.getElementById("add-requirement");
+        markInvalid(addRequirement, "Добавьте хотя бы одно обязательное фото-поле.");
+        invalid.push(addRequirement);
+      }
+      rows.forEach(function (row) {
+        var category = row.querySelector('select[name$="-category"]');
+        if (category && !category.value) {
+          markInvalid(category, "Выберите категорию этого фото.");
+          invalid.push(category);
+        }
+      });
+    }
+
+    var docList = document.getElementById("document-inputs");
+    if (docList) {
+      var fileInputs = Array.from(docList.querySelectorAll('input[type="file"]'));
+      var selectedFiles = fileInputs.reduce(function (all, input) { return all.concat(Array.from(input.files || [])); }, []);
+      var existingCount = Number(docList.dataset.existingCount || 0);
+      if (!existingCount && !selectedFiles.length) {
+        var firstFile = fileInputs[0];
+        markInvalid(firstFile, "Прикрепите хотя бы один файл PDF или Excel.");
+        invalid.push(firstFile);
+      }
+      if (existingCount + selectedFiles.length > 20) {
+        markInvalid(fileInputs[0], "Можно прикрепить не более 20 файлов.");
+        invalid.push(fileInputs[0]);
+      }
+      selectedFiles.forEach(function (file) {
+        if (!/\.(pdf|xls|xlsx)$/i.test(file.name)) {
+          var field = fileInputs.find(function (input) { return Array.from(input.files || []).includes(file); });
+          markInvalid(field, "Поддерживаются только PDF и Excel (.xls, .xlsx).");
+          invalid.push(field);
+        }
+      });
+    }
+
+    if (invalid.length) {
+      showFeedback("Заполните выделенные поля. Введённые данные и выбранные файлы сохранены.");
+      invalid[0].scrollIntoView({behavior: "smooth", block: "center"});
+      invalid[0].focus({preventScroll: true});
+      return;
+    }
+
+    var submitButton = form.querySelector('button[type="submit"]');
+    var originalLabel = submitButton ? submitButton.textContent : "";
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Сохранение…";
+    }
+    fetch(form.action || window.location.href, {
+      method: "POST",
+      body: new FormData(form),
+      credentials: "same-origin",
+      headers: {"X-Requested-With": "XMLHttpRequest"}
+    }).then(function (response) {
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return null;
+      }
+      return response.text();
+    }).then(function (html) {
+      if (html === null) return;
+      var parsed = new DOMParser().parseFromString(html, "text/html");
+      var returnedForm = parsed.getElementById("site-form");
+      if (!returnedForm) {
+        showFeedback("Не удалось сохранить объект. Проверьте соединение и попробуйте ещё раз.");
+        return;
+      }
+      var globalErrors = [];
+      returnedForm.querySelectorAll(".errorlist").forEach(function (list) {
+        var messages = Array.from(list.querySelectorAll("li")).map(function (li) { return li.textContent.trim(); }).filter(Boolean);
+        if (!messages.length) return;
+        var fieldName = null;
+        if (!list.classList.contains("nonfield") && !list.classList.contains("nonform")) {
+          var parent = list.parentElement;
+          while (parent && parent !== returnedForm) {
+            var controls = parent.querySelectorAll('input[name], select[name], textarea[name]');
+            if (controls.length === 1) {
+              fieldName = controls[0].name;
+              break;
+            }
+            parent = parent.parentElement;
+          }
+        }
+        if (fieldName) {
+          var currentField = Array.from(form.querySelectorAll('[name]')).find(function (field) { return field.name === fieldName; });
+          messages.forEach(function (message) { markInvalid(currentField, message); });
+        } else {
+          globalErrors = globalErrors.concat(messages);
+        }
+      });
+      globalErrors = Array.from(new Set(globalErrors));
+      showFeedback(globalErrors.length ? globalErrors.join(" ") : "Проверьте выделенные поля.");
+      var firstInvalid = form.querySelector(".is-invalid");
+      if (firstInvalid) {
+        firstInvalid.scrollIntoView({behavior: "smooth", block: "center"});
+        firstInvalid.focus({preventScroll: true});
+      }
+    }).catch(function () {
+      showFeedback("Не удалось отправить форму. Проверьте соединение; введённые данные и файлы сохранены.");
+    }).finally(function () {
+      if (submitButton && document.body.contains(submitButton)) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+      }
+    });
+  });
+})();
+
 // Dynamic document and photo rows.
 (function () {
   var docButton = document.getElementById("add-document");
@@ -400,7 +785,12 @@
     var bindFileName = function (input) {
       input.addEventListener("change", function () {
         var name = input.closest(".file-row").querySelector(".file-name");
+        var status = input.closest(".file-row").querySelector(".file-upload-status");
         name.textContent = input.files.length ? input.files[0].name : "";
+        status.textContent = input.files.length ? "Файл добавлен" : "";
+        input.classList.remove("is-invalid");
+        var oldError = input.closest(".file-row").querySelector(".site-inline-error");
+        if (oldError) oldError.remove();
         updateCount();
       });
     };
@@ -419,8 +809,12 @@
       label.appendChild(input);
       var filename = document.createElement("span");
       filename.className = "file-name muted";
+      var status = document.createElement("span");
+      status.className = "file-upload-status";
+      status.setAttribute("aria-live", "polite");
       row.appendChild(label);
       row.appendChild(filename);
+      row.appendChild(status);
       docList.appendChild(row);
       bindFileName(input);
       try {

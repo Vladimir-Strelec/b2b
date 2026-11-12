@@ -24,8 +24,13 @@
     <div>
       <h2>Обязательные фото <span class="badge">{{ object.photo_requirements.count }}</span></h2>
       <ol class="photo-requirement-list">
-        {% for requirement in object.photo_requirements.all %}
-          <li>{{ requirement.category.name }}</li>
+        {% for requirement in photo_requirements %}
+          <li>
+            <strong>{{ requirement.category.name }}</strong>
+            <span class="status status-{% if requirement.progress_status == 'missing' %}planned{% else %}{{ requirement.progress_status }}{% endif %}">
+              {{ requirement.progress_label }}
+            </span>
+          </li>
         {% empty %}
           <li class="muted">Фото пока не настроены.</li>
         {% endfor %}

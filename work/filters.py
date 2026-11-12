@@ -72,11 +72,14 @@ class WorkerFilter(django_filters.FilterSet):
 
 
 class ReportFilter(django_filters.FilterSet):
-    site_name = django_filters.CharFilter(
-        field_name="site__name", lookup_expr="icontains", label="Название объекта"
-    )
-    site_number = django_filters.CharFilter(
-        field_name="site__object_number", lookup_expr="icontains", label="Номер объекта"
+    site_search = django_filters.CharFilter(
+        label="Объект",
+        method="filter_site_search",
+        widget=TextInput(attrs={
+            "type": "search",
+            "placeholder": "Введите название, номер или адрес объекта",
+            "autocomplete": "off",
+        }),
     )
     status = django_filters.ChoiceFilter(
         choices=(
@@ -101,3 +104,12 @@ class ReportFilter(django_filters.FilterSet):
     def filter_status(self, queryset, name, value):
         # Status is stored on work plans and submissions, not legacy Report rows.
         return queryset
+
+    def filter_site_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(
+            Q(site__name__icontains=value)
+            | Q(site__object_number__icontains=value)
+            | Q(site__address__icontains=value)
+        )

@@ -9,9 +9,9 @@
       <div class="task-eyebrow">Задание на {{ display_plan.work_date|date:"d.m.Y" }}</div>
       <h2>{{ display_plan.site.name }}</h2>
       <div class="task-meta">
-        <span>№ объекта {{ display_plan.site.object_number }}</span>
-        <span class="task-type">Тип объекта {{ display_plan.site.get_site_type_display }}</span>
-        <span>{{ display_plan.site.address }}</span>
+        <div class="task-meta-item"><span class="task-meta-label">Номер объекта</span><strong class="task-meta-value">{{ display_plan.site.object_number }}</strong></div>
+        <div class="task-meta-item"><span class="task-meta-label">Тип объекта</span><span class="task-type">{{ display_plan.site.get_site_type_display }}</span></div>
+        <div class="task-meta-item"><span class="task-meta-label">Адрес объекта</span><strong class="task-meta-value">{{ display_plan.site.address }}</strong></div>
       </div>
     </div>
     <span class="status status-{{ display_plan.status }}">{% if display_plan.status == "approved" %}✓{% elif display_plan.status == "revision" %}✕{% else %}!{% endif %} {{ display_plan.get_status_display }}</span>
@@ -59,15 +59,17 @@
       {% if photo_formset %}
         <form method="post" enctype="multipart/form-data" id="submission-form" novalidate>
           {% csrf_token %}{{ photo_formset.management_form }}
+          <div id="submission-form-feedback" class="alert alert-error" role="alert" hidden></div>
           {% if photo_formset_invalid %}<div class="alert alert-error">Отчёт не отправлен. Проверьте каждое обязательное поле: сохраните или выберите фотографию и заполните описание.</div>{% endif %}
           {{ photo_formset.non_form_errors }}
           <div class="required-photo-grid">
             {% for photo_form in photo_formset %}
-              <div class="photo-entry required-photo-entry">
+              <div class="photo-entry required-photo-entry" data-has-saved-image="{% if photo_form.instance.pk and photo_form.instance.image %}true{% else %}false{% endif %}">
                 <div class="photo-slot-title"><span class="photo-slot-number">{{ forloop.counter }}</span><h4>{{ photo_form.slot.category.name }}</h4></div>
                 <div class="photo-upload-area">
                   {{ photo_form.image }}{{ photo_form.image.errors }}
                   <label class="photo-upload-control" for="{{ photo_form.image.id_for_label }}">
+                    <img class="photo-upload-preview" alt="Предпросмотр выбранной фотографии" hidden>
                     <svg class="photo-camera-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.6 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.6L17 3H9Zm3 14.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm0-2a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/></svg>
                     <span class="photo-upload-title">{% if photo_form.instance.pk %}Заменить фотографию{% else %}Добавить фотографию{% endif %}</span>
                     <span class="photo-upload-filename">{% if photo_form.instance.pk and photo_form.instance.image %}Фото сохранено — выберите файл, чтобы заменить{% else %}Нажмите, чтобы выбрать файл{% endif %}</span>

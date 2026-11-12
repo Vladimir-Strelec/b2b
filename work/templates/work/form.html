@@ -3,8 +3,9 @@
 {% block heading %}{{ title }}{% endblock %}
 {% block content %}
   <div class="card form-card">
-    <form method="post" enctype="multipart/form-data" id="site-form">
+    <form method="post" enctype="multipart/form-data" id="site-form" novalidate>
       {% csrf_token %}
+      <div id="site-form-feedback" class="alert alert-error" role="alert" hidden></div>
       {{ form.non_field_errors }}
       {{ form.as_div }}
       {% if site_form %}
@@ -39,7 +40,7 @@
             </ul>
           {% endif %}
           <div id="document-inputs" data-existing-count="{% if editing %}{{ object.documents.count }}{% else %}0{% endif %}">
-            <div class="file-row"><label>Выберите файл <input type="file" name="documents" accept="application/pdf,.pdf"></label><span class="file-name muted"></span></div>
+            <div class="file-row"><label>Выберите файл <input type="file" name="documents" accept="application/pdf,.pdf"></label><span class="file-name muted"></span><span class="file-upload-status" aria-live="polite"></span></div>
           </div>
           <button type="button" class="btn btn-light btn-sm" id="add-document">＋ Добавить PDF</button>
           <small class="muted" id="document-count">Добавлено: {% if editing %}{{ object.documents.count }}{% else %}0{% endif %} из 20</small>

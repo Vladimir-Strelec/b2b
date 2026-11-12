@@ -195,26 +195,26 @@ class WorkPlanListView(StaffRequiredMixin, ListView):
             value = self.request.GET.get(key)
             if value:
                 qs = qs.filter(**{field: value})
-        site_number = self.request.GET.get("site_number", "").strip()
-        if site_number:
-            qs = qs.filter(site__object_number__icontains=site_number)
-        site_name = self.request.GET.get("site_name", "").strip()
-        if site_name:
-            qs = qs.filter(site__name__icontains=site_name)
-        address = self.request.GET.get("address", "").strip()
-        if address:
-            qs = qs.filter(site__address__icontains=address)
+        site_search = self.request.GET.get("site_search", "").strip()
+        if site_search:
+            qs = qs.filter(
+                Q(site__object_number__icontains=site_search)
+                | Q(site__name__icontains=site_search)
+                | Q(site__address__icontains=site_search)
+            )
         return qs.annotate(status_order=plan_status_order()).order_by(
             "-work_date", "status_order", "site__name", "pk"
         )
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["sites"] = Site.objects.order_by("name")
+        ctx["site_options"] = list(
+            Site.objects.order_by("name").values("id", "object_number", "name", "address")
+        )
         ctx["statuses"] = WorkPlan.Status.choices
         ctx["site_types"] = Site.SiteType.choices
         today = timezone.localdate()
-        filter_keys = ("date", "site", "site_number", "site_name", "address", "site_type", "status")
+        filter_keys = ("date", "site", "site_search", "site_type", "status")
         has_filters = any(self.request.GET.get(key, "").strip() for key in filter_keys)
         ctx["history_mode"] = self.request.GET.get("history") == "1" or has_filters
         if ctx["history_mode"]:
@@ -510,11 +510,16 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
             self.object, submission, data=request.POST, files=request.FILES,
         )
         if formset and formset.is_valid():
-            previous_files = {
-                photo.pk: photo.image.name
-                for photo in submission.photos.all()
-                if photo.pk and photo.image
-            }
+            # A first-time submission is unsaved, so its reverse manager cannot
+            # be queried until it has a primary key. Existing submissions can
+            # still be inspected to remove replaced images after the update.
+            previous_files = {}
+            if submission.pk:
+                previous_files = {
+                    photo.pk: photo.image.name
+                    for photo in submission.photos.all()
+                    if photo.pk and photo.image
+                }
             with transaction.atomic():
                 if not submission.pk:
                     submission.status = WorkPlan.Status.SUBMITTED
@@ -704,6 +709,31 @@ class SiteDetailView(StaffRequiredMixin, DetailView):
         ctx["can_complete"] = (
             plans.exists() and not plans.exclude(status=WorkPlan.Status.APPROVED).exists()
         )
+        ctx["photo_requirements"] = self.object.photo_requirements.select_related("category").all()
+        for requirement in ctx["photo_requirements"]:
+            latest_photo = requirement.photos.filter(
+                submission__plan__site=self.object
+            ).select_related("submission__plan").order_by(
+                "-submission__created_at", "-pk"
+            ).first()
+            if latest_photo is None:
+                requirement.progress_status = "missing"
+                requirement.progress_label = "Работник ещё не добавил фото"
+                continue
+
+            status = latest_photo.submission.status or latest_photo.submission.plan.status
+            if status == WorkPlan.Status.APPROVED:
+                requirement.progress_status = "approved"
+                requirement.progress_label = "✓ Фото принято"
+            elif status == WorkPlan.Status.SUBMITTED:
+                requirement.progress_status = "submitted"
+                requirement.progress_label = "Фото ожидает проверки хозяина"
+            elif status == WorkPlan.Status.REVISION:
+                requirement.progress_status = "revision"
+                requirement.progress_label = "Отклонено — нужна доработка"
+            else:
+                requirement.progress_status = "missing"
+                requirement.progress_label = "Работнику необходимо добавить фото"
         old_reports = self.object.reports.select_related("worker")
         submissions = WorkSubmission.objects.filter(plan__site=self.object).select_related(
             "plan__site", "plan__worker"
@@ -896,10 +926,13 @@ class ReportListView(StaffRequiredMixin, FilterView):
         filter_form = ctx["filter"].form
         filters = filter_form.cleaned_data if filter_form.is_valid() else {}
         submissions = WorkSubmission.objects.select_related("plan__site", "plan__worker").prefetch_related("photos__category")
-        if filters.get("site_name"):
-            submissions = submissions.filter(plan__site__name__icontains=filters["site_name"])
-        if filters.get("site_number"):
-            submissions = submissions.filter(plan__site__object_number__icontains=filters["site_number"])
+        if filters.get("site_search"):
+            search = filters["site_search"]
+            submissions = submissions.filter(
+                Q(plan__site__name__icontains=search)
+                | Q(plan__site__object_number__icontains=search)
+                | Q(plan__site__address__icontains=search)
+            )
         if filters.get("status"):
             submissions = submissions.filter(
                 Q(status=filters["status"])
@@ -927,6 +960,9 @@ class ReportListView(StaffRequiredMixin, FilterView):
             reverse=True,
         )
         ctx["object_list"] = entries
+        ctx["site_options"] = list(
+            Site.objects.order_by("name").values("id", "object_number", "name", "address")
+        )
         report_days = []
         for day, day_items in groupby(
             entries, key=lambda report: timezone.localtime(report.created_at).date()

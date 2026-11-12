@@ -4,11 +4,27 @@
 {% block content %}
   <div class="filters">
     <form method="get" id="report-filter-form">
-      {{ filter.form.as_div }}
+      <fieldset>
+        <legend>Дата (от и до):</legend>
+        {{ filter.form.date }}
+      </fieldset>
+      <div class="site-search-field report-list-search">
+        <label for="report-site-filter">Объект — поиск по названию, номеру или адресу:</label>
+        <div class="site-search-control">
+          <input id="report-site-filter" name="site_search" value="{{ request.GET.site_search }}" type="search" placeholder="Введите название, номер или адрес объекта" autocomplete="off">
+          <button class="site-search-toggle" type="button" aria-label="Показать все объекты" aria-expanded="false">▾</button>
+        </div>
+        <div class="site-suggestions" hidden></div>
+      </div>
+      <div>
+        <label for="{{ filter.form.status.id_for_label }}">Статус:</label>
+        {{ filter.form.status }}
+      </div>
       <button type="submit" class="btn">Показать</button>
       <a class="btn btn-light" href="{% url 'report_list' %}">Сбросить</a>
     </form>
   </div>
+  {{ site_options|json_script:"report-site-options" }}
 
   <div id="report-results">
   {% for day, object_groups, day_total in report_days %}
