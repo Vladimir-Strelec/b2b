@@ -6,6 +6,15 @@
     <div class="muted">№ {{ object.object_number }} · Тип {{ object.get_site_type_display }} · {{ object.address }}</div>
     <div class="actions">
       <a class="btn btn-light btn-sm" href="{% url 'site_list' %}">← Все объекты</a>
+      {% if object.is_completed %}
+        <span class="status status-approved">✓ Объект завершён</span>
+        <form method="post" action="{% url 'site_revert_completion' object.pk %}">{% csrf_token %}<button class="btn btn-light btn-sm" type="submit">Вернуть в объекты</button></form>
+      {% elif can_complete %}
+        <form method="post" action="{% url 'site_complete' object.pk %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Завершить объект</button></form>
+      {% else %}
+        <button class="btn btn-light btn-sm" type="button" disabled title="Сначала примите все отчёты по планам объекта">Завершить объект</button>
+        <span class="muted">Сначала примите все отчёты по планам объекта.</span>
+      {% endif %}
       <a class="btn btn-sm" href="{% url 'site_edit' object.pk %}">Изменить</a>
       <a class="btn btn-danger btn-sm" href="{% url 'site_delete' object.pk %}">Удалить</a>
     </div>

@@ -19,7 +19,7 @@ from django.contrib import messages
 from django.core.files.storage import default_storage
 from django.shortcuts import redirect, get_object_or_404
 from django.http import HttpResponseForbidden
-from django.db.models import BooleanField, Case, CharField, Count, DateTimeField, IntegerField, OuterRef, Q, Subquery, Value, When
+from django.db.models import Case, Count, DateTimeField, IntegerField, OuterRef, Q, Subquery, Value, When
 from django.db.models.functions import Coalesce
 from django.db import IntegrityError, transaction
 from django.utils.dateparse import parse_date
@@ -265,7 +265,7 @@ class WorkPlanCreateView(StaffRequiredMixin, CreateView):
         self.object = form.save(commit=False)
         self.object.created_by = self.request.user
         self.object.save()
-        Site.objects.filter(pk=self.object.site_id).update(completion_reverted=False)
+        Site.objects.filter(pk=self.object.site_id).update(is_completed=False)
         messages.success(self.request, "План работы создан и назначен работнику.")
         return redirect("plan_detail", pk=self.object.pk)
 
@@ -291,7 +291,7 @@ class WorkPlanUpdateView(StaffRequiredMixin, UpdateView):
         self.object.review_comment = ""
         self.object.reviewed_at = None
         self.object.save(update_fields=["status", "review_comment", "reviewed_at"])
-        Site.objects.filter(pk=self.object.site_id).update(completion_reverted=False)
+        Site.objects.filter(pk=self.object.site_id).update(is_completed=False)
         messages.success(self.request, "План работы обновлён.")
         return redirect("plan_detail", pk=self.object.pk)
 
@@ -619,6 +619,7 @@ class SiteListView(StaffRequiredMixin, FilterView):
     model = Site
     filterset_class = SiteFilter
     template_name = "work/site_list.html"
+    completed_only = False
 
     def get_queryset(self):
         latest_submission = WorkSubmission.objects.filter(
@@ -632,33 +633,29 @@ class SiteListView(StaffRequiredMixin, FilterView):
                 output_field=DateTimeField(),
             )
         ).order_by("-latest_activity", "-work_date", "-created_at", "-pk")
-        return super().get_queryset().annotate(
+        queryset = super().get_queryset().annotate(
             legacy_report_count=Count("reports", distinct=True),
             submission_count=Count("work_plans__submissions", distinct=True),
-            latest_plan_status=Case(
-                When(completion_reverted=True, then=Value(None, output_field=CharField())),
-                default=Subquery(latest_plan.values("status")[:1]),
-                output_field=CharField(max_length=12),
-            ),
+            latest_plan_status=Subquery(latest_plan.values("status")[:1]),
             latest_plan_date=Subquery(latest_plan.values("work_date")[:1]),
         ).annotate(
-            is_completed=Case(
-                When(latest_plan_status=WorkPlan.Status.APPROVED, then=Value(True)),
-                default=Value(False),
-                output_field=BooleanField(),
-            ),
             state_order=Case(
                 When(latest_plan_status__isnull=True, then=Value(0)),
-                When(latest_plan_status=WorkPlan.Status.SUBMITTED, then=Value(1)),
-                When(latest_plan_status=WorkPlan.Status.REVISION, then=Value(2)),
-                When(latest_plan_status=WorkPlan.Status.PLANNED, then=Value(3)),
+                When(latest_plan_status=WorkPlan.Status.REVISION, then=Value(1)),
+                When(latest_plan_status=WorkPlan.Status.PLANNED, then=Value(2)),
+                When(latest_plan_status=WorkPlan.Status.SUBMITTED, then=Value(3)),
                 default=Value(4),
                 output_field=IntegerField(),
             ),
         ).order_by("state_order", "name", "pk")
+        if not self.completed_only:
+            queryset = queryset.filter(is_completed=False)
+        return queryset
 
 
 class CompletedSiteListView(SiteListView):
+    completed_only = True
+
     def get_queryset(self):
         return super().get_queryset().filter(is_completed=True)
 
@@ -671,14 +668,30 @@ class CompletedSiteListView(SiteListView):
 class SiteRevertCompletionView(StaffRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         site = get_object_or_404(Site, pk=kwargs["pk"])
-        latest_plan = site.work_plans.order_by("-work_date", "-created_at", "-pk").first()
-        if not latest_plan or latest_plan.status != WorkPlan.Status.APPROVED:
-            messages.error(request, "У объекта нет завершённого плана, который можно вернуть без плана.")
+        if not site.is_completed:
+            messages.error(request, "Объект уже находится в активном списке.")
         else:
-            site.completion_reverted = True
-            site.save(update_fields=["completion_reverted"])
-            messages.success(request, "Статус объекта изменён на «Без плана». История работы сохранена.")
-        return redirect("site_completed_list")
+            site.is_completed = False
+            site.save(update_fields=["is_completed"])
+            messages.success(request, "Объект возвращён в активный список. История отчётов сохранена.")
+        return redirect("site_list")
+
+
+class SiteCompleteView(StaffRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        site = get_object_or_404(Site, pk=kwargs["pk"])
+        plans = site.work_plans.all()
+        if site.is_completed:
+            messages.info(request, "Объект уже завершён.")
+        elif not plans.exists():
+            messages.error(request, "Нельзя завершить объект без планов работ.")
+        elif plans.exclude(status=WorkPlan.Status.APPROVED).exists():
+            messages.error(request, "Сначала примите или обработайте все отчёты по планам этого объекта.")
+        else:
+            site.is_completed = True
+            site.save(update_fields=["is_completed"])
+            messages.success(request, "Объект завершён и перемещён в «Завершённые объекты».")
+        return redirect("site_detail", pk=site.pk)
 
 
 class SiteDetailView(StaffRequiredMixin, DetailView):
@@ -687,6 +700,10 @@ class SiteDetailView(StaffRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        plans = self.object.work_plans.all()
+        ctx["can_complete"] = (
+            plans.exists() and not plans.exclude(status=WorkPlan.Status.APPROVED).exists()
+        )
         old_reports = self.object.reports.select_related("worker")
         submissions = WorkSubmission.objects.filter(plan__site=self.object).select_related(
             "plan__site", "plan__worker"
@@ -992,7 +1009,7 @@ def _submission_report_entries(submissions):
             status_label={
                 WorkPlan.Status.PLANNED: "В обработке",
                 WorkPlan.Status.SUBMITTED: "Ожидает рассмотрения",
-                WorkPlan.Status.APPROVED: "Закрыт",
+                WorkPlan.Status.APPROVED: "Принят",
                 WorkPlan.Status.REVISION: "Не принят",
             }.get(submission_status, ""),
             detail_url=reverse_lazy("submission_detail", kwargs={"pk": latest.pk}),

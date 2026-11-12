@@ -21,6 +21,7 @@ urlpatterns = [
     path("sites/new/", views.SiteCreateView.as_view(), name="site_create"),
     path("sites/<int:pk>/edit/", views.SiteUpdateView.as_view(), name="site_edit"),
     path("sites/<int:pk>/delete/", views.SiteDeleteView.as_view(), name="site_delete"),
+    path("sites/<int:pk>/complete/", views.SiteCompleteView.as_view(), name="site_complete"),
     path("sites/<int:pk>/revert-completion/", views.SiteRevertCompletionView.as_view(), name="site_revert_completion"),
     path("workers/new/", views.WorkerCreateView.as_view(), name="worker_create"),
     path("workers/<int:pk>/", views.WorkerDetailView.as_view(), name="worker_detail"),

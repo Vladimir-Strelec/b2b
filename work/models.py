@@ -47,10 +47,7 @@ class Site(models.Model):
     object_number = models.CharField("Номер объекта", max_length=50, default="")
     address = models.CharField("Адрес", max_length=255)
     site_type = models.CharField("Тип объекта", max_length=1, choices=SiteType.choices, default=SiteType.A)
-    completion_reverted = models.BooleanField(
-        "Статус завершения сброшен", default=False,
-        help_text="Объект исключён из завершённых без удаления планов и отчётов.",
-    )
+    is_completed = models.BooleanField("Объект завершён", default=False, db_index=True)
     workers = models.ManyToManyField(
         Worker, related_name="sites", blank=True, verbose_name="Работники"
     )

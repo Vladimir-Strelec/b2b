@@ -21,7 +21,7 @@
           <td><a class="link" href="{% url 'site_detail' site.pk %}"><b>{{ site.name }}</b></a></td>
           <td>{{ site.get_site_type_display }}</td>
           <td data-address="{{ site.address }}">{{ site.address }}</td>
-          <td>{% if site.latest_plan_status == "approved" %}<span class="status status-approved">✓ Завершён</span>{% elif site.latest_plan_status == "revision" %}<span class="status status-revision">✕ Отказано</span>{% elif site.latest_plan_status == "submitted" %}<span class="status status-submitted">! На проверке</span>{% elif site.latest_plan_status == "planned" %}<span class="status status-planned">! Запланирован</span>{% else %}<span class="muted">— Без плана</span>{% endif %}</td>
+          <td>{% if site.is_completed %}<span class="status status-approved">✓ Завершён</span>{% elif site.latest_plan_status == "approved" %}<span class="status status-approved">✓ Отчёты приняты</span>{% elif site.latest_plan_status == "revision" %}<span class="status status-revision">✕ Отказано</span>{% elif site.latest_plan_status == "submitted" %}<span class="status status-submitted">! На проверке</span>{% elif site.latest_plan_status == "planned" %}<span class="status status-planned">! Запланирован</span>{% else %}<span class="muted">— Без плана</span>{% endif %}</td>
           <td><span class="badge">{{ site.legacy_report_count|add:site.submission_count }}</span></td>
           <td class="nowrap">
             <div class="actions">
@@ -29,7 +29,7 @@
               {% if completed_only %}
                 <form method="post" action="{% url 'site_revert_completion' site.pk %}">
                   {% csrf_token %}
-                  <button class="btn btn-light btn-sm" type="submit">Вернуть без плана</button>
+                  <button class="btn btn-light btn-sm" type="submit">Вернуть в объекты</button>
                 </form>
               {% else %}
                 <a class="btn btn-light btn-sm" href="{% url 'site_edit' site.pk %}">Изменить</a>

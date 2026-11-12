@@ -28,7 +28,8 @@ class SiteFilter(django_filters.FilterSet):
             ("revision", "Отказано"),
             ("submitted", "На проверке"),
             ("planned", "Запланирован"),
-            ("approved", "Завершён"),
+            ("approved", "Отчёты приняты"),
+            ("completed", "Объект завершён"),
         ),
         label="Состояние",
         method="filter_state",
@@ -36,9 +37,13 @@ class SiteFilter(django_filters.FilterSet):
 
     def filter_state(self, queryset, name, value):
         if value == "none":
-            return queryset.filter(latest_plan_status__isnull=True)
-        if value in {"planned", "submitted", "revision", "approved"}:
-            return queryset.filter(latest_plan_status=value)
+            return queryset.filter(latest_plan_status__isnull=True, is_completed=False)
+        if value == "completed":
+            return queryset.filter(is_completed=True)
+        if value == "approved":
+            return queryset.filter(latest_plan_status=value, is_completed=False)
+        if value in {"planned", "submitted", "revision"}:
+            return queryset.filter(latest_plan_status=value, is_completed=False)
         return queryset
 
     class Meta:
@@ -68,7 +73,7 @@ class ReportFilter(django_filters.FilterSet):
             (WorkPlan.Status.PLANNED, "В обработке"),
             (WorkPlan.Status.SUBMITTED, "Ожидает рассмотрения"),
             (WorkPlan.Status.REVISION, "Не принят"),
-            (WorkPlan.Status.APPROVED, "Закрыт"),
+            (WorkPlan.Status.APPROVED, "Принят"),
         ),
         label="Статус",
         method="filter_status",
