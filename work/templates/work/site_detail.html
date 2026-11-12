@@ -3,7 +3,7 @@
 {% block heading %}{{ object.name }}{% endblock %}
 {% block content %}
   <div class="detail-head">
-    <div class="muted">Тип {{ object.get_site_type_display }} · {{ object.address }}</div>
+    <div class="muted">№ {{ object.object_number }} · Тип {{ object.get_site_type_display }} · {{ object.address }}</div>
     <div class="actions">
       <a class="btn btn-light btn-sm" href="{% url 'site_list' %}">← Все объекты</a>
       <a class="btn btn-sm" href="{% url 'site_edit' object.pk %}">Изменить</a>
@@ -11,18 +11,30 @@
     </div>
   </div>
 
-  <div class="detail-cols">
-    <div class="card">
-      <h2>Работники <span class="badge">{{ workers|length }}</span></h2>
-      <ul class="people">
-        {% for w in workers %}
-          <li><b>{{ w.name }}</b><br><span class="muted">{{ w.phone }}</span></li>
+  <div class="card site-setup-summary">
+    <div>
+      <h2>Обязательные фото <span class="badge">{{ object.photo_requirements.count }}</span></h2>
+      <ol class="photo-requirement-list">
+        {% for requirement in object.photo_requirements.all %}
+          <li>{{ requirement.category.name }}</li>
         {% empty %}
-          <li class="muted">Никто не привязан.</li>
+          <li class="muted">Фото пока не настроены.</li>
+        {% endfor %}
+      </ol>
+    </div>
+    <div>
+      <h2>Документация объекта <span class="badge">{{ object.documents.count }}</span></h2>
+      <ul class="document-list">
+        {% for doc in object.documents.all %}
+          <li><a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"sites/" }}</a></li>
+        {% empty %}
+          <li class="muted">Документы не добавлены.</li>
         {% endfor %}
       </ul>
     </div>
+  </div>
 
+  <div class="detail-cols site-reports">
     <div class="card">
       <h2>Отчёты <span class="badge">{{ report_total }}</span></h2>
       {% if reports %}
@@ -34,7 +46,7 @@
               <tr>
                 <td class="nowrap">{{ r.created_at|date:"d.m.Y H:i" }}</td>
                 <td>{{ r.worker.name }}</td>
-                <td>{{ r.description|truncatechars:80 }}{% if r.submission_count > 1 %}<div class="muted">Отправок: {{ r.submission_count }} · фотографий: {{ r.photo_count }}</div>{% endif %}</td>
+                <td class="site-report-description"><details class="site-report-description-toggle"><summary><span>{{ r.description|default:"Описание отсутствует"|truncatechars:140 }}</span></summary><div class="site-report-description-full">{{ r.description|linebreaksbr }}</div></details>{% if r.submission_count > 1 %}<div class="muted">Отправок: {{ r.submission_count }} · фотографий: {{ r.photo_count }}</div>{% endif %}</td>
                 <td>{% if r.status %}<span class="status status-{{ r.status }}">{% if r.status == "approved" %}✓{% elif r.status == "revision" %}✕{% else %}!{% endif %} {{ r.status_label }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
                 <td class="nowrap"><a class="btn btn-sm" href="{{ r.detail_url }}">Открыть</a></td>
               </tr>

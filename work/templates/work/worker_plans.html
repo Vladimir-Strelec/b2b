@@ -2,12 +2,53 @@
 {% block title %}Мои планы работы{% endblock %}
 {% block heading %}Мои планы работы{% endblock %}
 {% block content %}
-<form method="get" class="filters"><div><label for="date">История по дате</label><input id="date" type="date" name="date" value="{{ selected_date }}"></div><div><label for="status">Состояние</label><select id="status" name="status"><option value="">Все состояния</option>{% for value,label in statuses %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><button class="btn" type="submit">Показать</button><a class="btn btn-light" href="{% url 'worker_plans' %}">Вся история</a></form>
-{% regroup plans by work_date as date_groups %}
-{% for day in date_groups %}
-<section class="group"><h2 class="group-title">{{ day.grouper|date:"j E Y, l" }}{% if day.grouper == today %}<span class="badge">Сегодня · {{ day.list|length }} объектов</span>{% else %}<span class="badge">{{ day.list|length }} объектов</span>{% endif %}</h2>
-<div class="table-wrap"><table><thead><tr><th>Объект</th><th>Адрес</th><th>Состояние</th><th></th></tr></thead><tbody>
-{% for plan in day.list %}<tr><td><b>{{ plan.site.name }}</b><div class="muted">Тип {{ plan.site.get_site_type_display }}</div></td><td>{{ plan.site.address }}</td><td><span class="status status-{{ plan.status }}">{% if plan.status == "approved" %}✓{% elif plan.status == "revision" %}✕{% else %}!{% endif %} {{ plan.get_status_display }}</span></td><td><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть задание</a></td></tr>{% endfor %}
-</tbody></table></div></section>
-{% empty %}<p class="muted">На выбранную дату заданий нет.</p>{% endfor %}
+<form method="get" class="filters worker-plan-filters">
+  {% if history_mode %}<input type="hidden" name="history" value="1">{% endif %}
+  <div><label for="date">История по дате</label><input id="date" type="date" name="date" value="{{ selected_date }}"></div>
+  <div><label for="status">Состояние</label><select id="status" name="status"><option value="">Все состояния</option>{% for value,label in statuses %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <button class="btn" type="submit">Показать историю</button>
+  {% if history_mode %}<a class="btn btn-light" href="{% url 'worker_plans' %}">К актуальным планам</a>{% else %}<a class="btn btn-light" href="?history=1">Вся история</a>{% endif %}
+</form>
+
+{% if history_mode %}
+  {% for day, plans in date_groups %}
+    <section class="card plan-day-card">
+      <header class="plan-day-heading"><h2>{{ day|date:"j E Y, l" }}</h2><span class="badge">{{ plans|length }} заданий</span></header>
+      <div class="table-wrap"><table><thead><tr><th>Объект</th><th>Адрес</th><th>Состояние</th><th></th></tr></thead><tbody>
+        {% for plan in plans %}<tr><td><b>{{ plan.site.name }}</b><div class="muted">Тип {{ plan.site.get_site_type_display }} · № {{ plan.site.object_number }}</div></td><td>{{ plan.site.address }}</td><td><span class="status status-{{ plan.status }}">{% if plan.status == "approved" %}✓{% elif plan.status == "revision" %}✕{% else %}!{% endif %} {{ plan.get_status_display }}</span></td><td><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть задание</a></td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  {% empty %}<p class="muted">На выбранные условия заданий нет.</p>{% endfor %}
+{% else %}
+  <div class="worker-plans-layout">
+    <section class="card worker-today-plans">
+      <header class="plan-day-heading"><h2>Активные планы на сегодня</h2><span class="badge">{{ today_plans|length }} заданий</span></header>
+      {% if today_plans %}
+        <div class="table-wrap"><table><thead><tr><th>Объект</th><th>Адрес</th><th>Состояние</th><th></th></tr></thead><tbody>
+          {% for plan in today_plans %}<tr><td><b>{{ plan.site.name }}</b><div class="muted">Тип {{ plan.site.get_site_type_display }} · № {{ plan.site.object_number }}</div></td><td>{{ plan.site.address }}</td><td><span class="status status-{{ plan.status }}">{% if plan.status == "revision" %}✕{% elif plan.status == "submitted" %}!{% else %}!{% endif %} {{ plan.get_status_display }}</span></td><td><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть задание</a></td></tr>{% endfor %}
+        </tbody></table></div>
+      {% else %}<p class="muted">Активных заданий на сегодня нет.</p>{% endif %}
+    </section>
+
+    <aside class="card worker-upcoming-plans">
+      <header class="plan-day-heading"><h2>Предстоящие</h2><span class="badge">{{ active_future_count }} заданий</span></header>
+      {% for day, plans in upcoming_groups %}
+        <section class="upcoming-plan-day"><h3>{{ day|date:"j E, l" }}</h3>
+          {% for plan in plans %}<a class="upcoming-plan-item" href="{% url 'plan_detail' plan.pk %}"><b>{{ plan.site.name }}</b><span>№ {{ plan.site.object_number }} · {{ plan.site.address }}</span><span class="status status-{{ plan.status }}">{{ plan.get_status_display }}</span></a>{% endfor %}
+        </section>
+      {% empty %}<p class="muted">Предстоящих активных планов нет.</p>{% endfor %}
+    </aside>
+  </div>
+
+  <section class="card worker-completed-plans">
+    <header class="plan-day-heading"><h2>Закрытые задания</h2></header>
+    {% for day, plans in completed_groups %}
+      <details class="completed-plan-day"><summary>{{ day|date:"j E Y, l" }} <span class="badge">{{ plans|length }}</span></summary>
+        <div class="table-wrap"><table><thead><tr><th>Объект</th><th>Адрес</th><th>Состояние</th><th></th></tr></thead><tbody>
+          {% for plan in plans %}<tr><td><b>{{ plan.site.name }}</b><div class="muted">Тип {{ plan.site.get_site_type_display }} · № {{ plan.site.object_number }}</div></td><td>{{ plan.site.address }}</td><td><span class="status status-approved">✓ {{ plan.get_status_display }}</span></td><td><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть задание</a></td></tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+    {% empty %}<p class="muted">Закрытых заданий пока нет.</p>{% endfor %}
+  </section>
+{% endif %}
 {% endblock %}

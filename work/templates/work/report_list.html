@@ -3,50 +3,42 @@
 {% block heading %}Отчёты{% endblock %}
 {% block content %}
   <div class="filters">
-    <form method="get">
+    <form method="get" id="report-filter-form">
       {{ filter.form.as_div }}
-      <div>
-        <label for="group">Группировка</label>
-        <select name="group" id="group">
-          <option value="date" {% if group == "date" %}selected{% endif %}>По дате</option>
-          <option value="site" {% if group == "site" %}selected{% endif %}>По объектам</option>
-        </select>
-      </div>
       <button type="submit" class="btn">Показать</button>
       <a class="btn btn-light" href="{% url 'report_list' %}">Сбросить</a>
     </form>
   </div>
 
-  {% for key, items in groups %}
-    <section class="group">
-      <h2 class="group-title">
-        {% if group == "site" %}{{ key.name }} <span class="muted">· {{ key.address }}</span>{% else %}{{ key|date:"j E Y, l" }}{% endif %}
-        <span class="badge">{{ items|length }}</span>
-      </h2>
-
-      <div class="rows">
-        {% for r in items %}
-          <a class="row" href="{{ r.detail_url }}">
-            <img class="thumb" src="{{ r.photo_url }}" alt="" loading="lazy">
-            <div class="row-main">
-              <div class="row-top">
-                {% if group == "site" %}
-                  <b>{{ r.created_at|date:"d.m.Y H:i" }}</b>
-                  <span class="muted">{{ r.worker.name }}</span>
-                {% else %}
-                  <b>{{ r.site.name }}</b>
-                  <span class="muted">{{ r.created_at|date:"H:i" }} · {{ r.worker.name }}</span>
-                {% endif %}
-                {% if r.status %}<span class="status status-{{ r.status }}">{% if r.status == "approved" %}✓{% elif r.status == "revision" %}✕{% else %}!{% endif %} {{ r.status_label }}</span>{% endif %}
-              </div>
-              <div class="clamp">{{ r.description }}</div>
-              {% if r.submission_count > 1 %}<small class="muted report-volume">Отправок: {{ r.submission_count }} · фотографий: {{ r.photo_count }}</small>{% endif %}
-            </div>
-          </a>
-        {% endfor %}
-      </div>
+  <div id="report-results">
+  {% for day, status_groups, day_total in report_days %}
+    <section class="card report-day-card">
+      <header class="report-day-heading"><h2>{{ day|date:"j E Y, l" }}</h2><span class="badge">{{ day_total }} отчётов</span></header>
+      {% for group in status_groups %}
+        <section class="report-status-section">
+          <h3><span class="status status-{{ group.status|default:'unknown' }}">{% if group.status == "approved" %}✓{% elif group.status == "revision" %}✕{% elif group.status %}!{% else %}—{% endif %} {{ group.label }}</span><span class="badge">{{ group.items|length }}</span></h3>
+          <div class="table-wrap report-table-wrap">
+            <table class="report-table">
+              <thead><tr><th>Фото</th><th>Объект</th><th>Дата</th><th>Описание</th><th>Состояние</th><th>Отправки</th><th></th></tr></thead>
+              <tbody>
+              {% for r in group.items %}
+                {% ifchanged r.site.pk %}<tr class="report-object-divider"><td colspan="7">Объект · <b>{{ r.site.name }}</b><span class="muted"> · № {{ r.site.object_number }} · {{ r.site.address }}</span></td></tr>{% endifchanged %}
+                <tr>
+                  <td><img class="table-thumb" src="{{ r.photo_url }}" alt="Фото объекта" loading="lazy"></td>
+                  <td class="report-object-cell"><a class="link" href="{% url 'site_detail' r.site.pk %}"><b>{{ r.site.name }}</b></a><div class="muted">№ {{ r.site.object_number }} · {{ r.site.address }}</div></td>
+                  <td class="nowrap">{{ r.created_at|date:"d.m.Y H:i" }}</td>
+                  <td class="report-description"><div class="clamp">{{ r.description }}</div></td>
+                  <td>{% if r.status %}<span class="status status-{{ r.status }}">{% if r.status == "approved" %}✓{% elif r.status == "revision" %}✕{% else %}!{% endif %} {{ r.status_label }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+                  <td>{% if r.submission_count > 1 %}{{ r.submission_count }} · {{ r.photo_count }} фото{% else %}1{% endif %}</td>
+                  <td><a class="btn btn-sm" href="{{ r.detail_url }}">Открыть</a></td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% endfor %}
     </section>
-  {% empty %}
-    <p class="muted">Отчётов не найдено.</p>
-  {% endfor %}
+  {% empty %}<p class="muted">Отчётов не найдено.</p>{% endfor %}
+  </div>
 {% endblock %}

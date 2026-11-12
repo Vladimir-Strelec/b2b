@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1" name="viewport">
     <title>{% block title %}Кабинет{% endblock %}</title>
-    <link href="{% static 'work/css/app.css' %}" rel="stylesheet">
+    <link href="{% static 'work/css/app.css' %}?v=20261112-16" rel="stylesheet">
 </head>
 <body>
 <div aria-hidden="true" class="bg"></div>
@@ -19,14 +19,14 @@
                href="{% url 'dashboard' %}">Главная</a>
             {% if user.is_staff %}
 
-            <a class="{% if request.resolver_match.url_name == 'plan_list' or request.resolver_match.url_name == 'plan_create' or request.resolver_match.url_name == 'plan_edit' %}active{% endif %}"
+            <a class="{% if request.resolver_match.url_name == 'plan_list' or request.resolver_match.url_name == 'plan_create' or request.resolver_match.url_name == 'plan_edit' or request.resolver_match.url_name == 'plan_detail' or request.resolver_match.url_name == 'plan_delete' %}active{% endif %}"
                href="{% url 'plan_list' %}">Планы работы</a>
             <a class="{% if request.resolver_match.url_name == 'site_list' %}active{% endif %}"
                href="{% url 'site_list' %}">Объекты</a>
-            <a class="{% if request.resolver_match.url_name == 'worker_list' %}active{% endif %}"
-               href="{% url 'worker_list' %}">Работники</a>
-            <a class="{% if request.resolver_match.url_name == 'report_list' %}active{% endif %}"
+            <a class="{% if request.resolver_match.url_name == 'report_list' or request.resolver_match.url_name == 'report_detail' or request.resolver_match.url_name == 'submission_detail' %}active{% endif %}"
                href="{% url 'report_list' %}">Отчёты</a>
+            <a class="{% if request.resolver_match.url_name == 'site_completed_list' %}active{% endif %}"
+               href="{% url 'site_completed_list' %}">Завершённые объекты</a>
             {% endif %}
             {% if user.worker and not user.is_staff %}
             <a class="{% if request.resolver_match.url_name == 'report_create' %}active{% endif %}"
@@ -56,6 +56,6 @@
 </main>
 {% endif %}
 
-<script defer src="{% static 'work/js/app.js' %}?v=20261110-6"></script>
+<script defer src="{% static 'work/js/app.js' %}?v=20261112-14"></script>
 </body>
 </html>

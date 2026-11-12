@@ -3,10 +3,48 @@
 {% block heading %}{{ title }}{% endblock %}
 {% block content %}
   <div class="card form-card">
-    <form method="post">
+    <form method="post" enctype="multipart/form-data" id="site-form">
       {% csrf_token %}
       {{ form.non_field_errors }}
       {{ form.as_div }}
+      {% if site_form %}
+        <section class="form-section">
+          <h2>Обязательные фото для работника</h2>
+          <p class="muted">Добавьте до 20 фото-полей и выберите категорию для каждого. Работник позже загрузит фотографию в каждое поле.</p>
+          {{ photo_requirement_formset.management_form }}
+          {{ photo_requirement_formset.non_form_errors }}
+          <div id="photo-requirements">
+            {% for requirement_form in photo_requirement_formset %}
+              <div class="photo-requirement-row">
+                {{ requirement_form.as_div }}
+                <button type="button" class="btn btn-danger btn-sm remove-requirement">Убрать поле</button>
+              </div>
+            {% endfor %}
+          </div>
+          <button type="button" class="btn btn-light btn-sm" id="add-requirement">＋ Добавить фото</button>
+          <div id="empty-requirement-form" hidden>
+            <div class="photo-requirement-row">
+              {{ photo_requirement_formset.empty_form.as_div }}
+              <button type="button" class="btn btn-danger btn-sm remove-requirement">Убрать поле</button>
+            </div>
+          </div>
+        </section>
+        <section class="form-section">
+          <h2>Документы объекта (до 20 PDF)</h2>
+          {% if site_documents %}
+            <ul class="document-list">
+              {% for doc in site_documents %}
+                <li><a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"sites/" }}</a></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          <div id="document-inputs" data-existing-count="{% if editing %}{{ object.documents.count }}{% else %}0{% endif %}">
+            <div class="file-row"><label>Выберите файл <input type="file" name="documents" accept="application/pdf,.pdf"></label><span class="file-name muted"></span></div>
+          </div>
+          <button type="button" class="btn btn-light btn-sm" id="add-document">＋ Добавить PDF</button>
+          <small class="muted" id="document-count">Добавлено: {% if editing %}{{ object.documents.count }}{% else %}0{% endif %} из 20</small>
+        </section>
+      {% endif %}
       <button type="submit" class="btn">Сохранить</button>
       <a class="btn btn-light" href="{% url back %}">Отмена</a>
     </form>

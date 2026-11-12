@@ -14,6 +14,28 @@ class Worker(models.Model):
         return self.name
 
 
+class WorkShift(models.Model):
+    worker = models.ForeignKey(
+        Worker, on_delete=models.CASCADE, related_name="shifts", verbose_name="Работник"
+    )
+    started_at = models.DateTimeField("Начало смены", auto_now_add=True)
+    ended_at = models.DateTimeField("Конец смены", null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        verbose_name = "Рабочая смена"
+        verbose_name_plural = "Рабочие смены"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["worker"], condition=models.Q(ended_at__isnull=True),
+                name="one_open_shift_per_worker",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.worker} · {self.started_at:%d.%m.%Y %H:%M}"
+
+
 class Site(models.Model):
     class SiteType(models.TextChoices):
         A = "A", "A"
@@ -22,14 +44,32 @@ class Site(models.Model):
         D = "D", "D"
 
     name = models.CharField("Название объекта", max_length=150)
+    object_number = models.CharField("Номер объекта", max_length=50, default="")
     address = models.CharField("Адрес", max_length=255)
     site_type = models.CharField("Тип объекта", max_length=1, choices=SiteType.choices, default=SiteType.A)
+    completion_reverted = models.BooleanField(
+        "Статус завершения сброшен", default=False,
+        help_text="Объект исключён из завершённых без удаления планов и отчётов.",
+    )
     workers = models.ManyToManyField(
         Worker, related_name="sites", blank=True, verbose_name="Работники"
     )
 
     def __str__(self):
         return self.name
+
+
+class SiteDocument(models.Model):
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="documents")
+    file = models.FileField("PDF", upload_to="sites/%Y/%m/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "PDF объекта"
+        verbose_name_plural = "PDF объекта"
+
+    def __str__(self):
+        return self.file.name.rsplit("/", 1)[-1]
 
 
 class Report(models.Model):
@@ -99,8 +139,27 @@ class PhotoCategory(models.Model):
         return self.name
 
 
+class SitePhotoRequirement(models.Model):
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="photo_requirements")
+    category = models.ForeignKey(PhotoCategory, on_delete=models.PROTECT, related_name="site_requirements", verbose_name="Категория фото")
+    order = models.PositiveSmallIntegerField("Порядок", default=0)
+
+    class Meta:
+        ordering = ["order", "pk"]
+        verbose_name = "Обязательное фото объекта"
+        verbose_name_plural = "Обязательные фото объекта"
+
+    def __str__(self):
+        return f"{self.site} · {self.category}"
+
+
 class WorkSubmission(models.Model):
     plan = models.ForeignKey(WorkPlan, on_delete=models.CASCADE, related_name="submissions")
+    review_comment = models.TextField("Причина возврата на доработку", blank=True)
+    status = models.CharField(
+        "Состояние отправки", max_length=12, choices=WorkPlan.Status.choices,
+        null=True, blank=True, default=None,
+    )
     created_at = models.DateTimeField("Отправлено", auto_now_add=True)
 
     class Meta:
@@ -114,10 +173,22 @@ class WorkSubmission(models.Model):
 
 class WorkPhoto(models.Model):
     submission = models.ForeignKey(WorkSubmission, on_delete=models.CASCADE, related_name="photos")
+    photo_slot = models.ForeignKey(
+        SitePhotoRequirement, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="photos", verbose_name="Требуемое фото",
+    )
     category = models.ForeignKey(PhotoCategory, on_delete=models.PROTECT, null=True, related_name="photos", verbose_name="Категория")
     image = models.ImageField("Фото", upload_to="work/%Y/%m/")
-    description = models.TextField("Что сделано")
+    description = models.TextField("Что сделано", blank=True, default="")
 
     class Meta:
         verbose_name = "Фото выполненной работы"
         verbose_name_plural = "Фото выполненной работы"
+        constraints = [
+            models.UniqueConstraint(fields=["submission", "photo_slot"], name="unique_photo_slot_per_submission"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.photo_slot_id:
+            self.category = self.photo_slot.category
+        super().save(*args, **kwargs)

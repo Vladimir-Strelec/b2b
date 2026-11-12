@@ -10,7 +10,47 @@
       <a class="tile" href="{% url 'worker_list' %}">Работники<small>Контакты и объекты</small></a>
       <a class="tile" href="{% url 'report_list' %}">Отчёты<small>Фото и описания работ</small></a>
     {% elif user.worker %}
-      <a class="tile" href="{% url 'worker_plans' %}">Мои планы работы<small>{{ today_plans|length }} заданий на сегодня</small></a>
+      <a class="tile" href="{% url 'worker_plans' %}">Активные задания на сегодня<small>{{ active_today_count }} заданий</small></a>
+      <a class="tile" href="{% url 'worker_plans' %}">Предстоящие задания<small>{{ active_future_count }} заданий на будущие дни</small></a>
     {% endif %}
   </div>
+
+  {% if user.is_staff %}
+    <section class="card dashboard-hours-card">
+      <h2>Рабочее время работников</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Работник</th><th>Состояние</th><th>Начало смены</th><th>Сегодня</th><th>За месяц</th></tr></thead>
+          <tbody>
+          {% for row in worker_time_rows %}
+            <tr>
+              <td><b>{{ row.worker.name }}</b></td>
+              <td>{% if row.current_shift %}<span class="status {% if row.over_eight_hours %}status-revision{% else %}status-approved{% endif %}" data-shift-start="{{ row.current_shift.started_at|date:'c' }}" data-on-time="● На смене" data-overdue="⚠ Смена больше 8 часов">{% if row.over_eight_hours %}⚠ Смена больше 8 часов{% else %}● На смене{% endif %}</span>{% else %}<span class="status status-planned">● Не на смене</span>{% endif %}</td>
+              <td>{% if row.current_shift %}{{ row.current_shift.started_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
+              <td>{{ row.today_hours }}</td>
+              <td>{{ row.month_hours }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="muted">Работников пока нет.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% elif user.worker %}
+    <section class="card dashboard-shift-card">
+      <div>
+        <h2>Учёт рабочего времени</h2>
+        {% if current_shift %}
+          <p><span class="status {% if shift_over_eight_hours %}status-revision{% else %}status-approved{% endif %}" data-shift-start="{{ current_shift.started_at|date:'c' }}" data-on-time="● Смена начата {{ current_shift.started_at|date:'H:i' }}" data-overdue="⚠ Смена длится больше 8 часов">{% if shift_over_eight_hours %}⚠ Смена длится больше 8 часов{% else %}● Смена начата {{ current_shift.started_at|date:"H:i" }}{% endif %}</span></p>
+          <form method="post" action="{% url 'shift_end' %}">{% csrf_token %}<button class="btn btn-danger" type="submit">Завершить смену</button></form>
+        {% else %}
+          <p><span class="status status-planned">● Смена не начата</span></p>
+          <form method="post" action="{% url 'shift_start' %}">{% csrf_token %}<button class="btn" type="submit">Начать смену</button></form>
+        {% endif %}
+      </div>
+      <div class="shift-totals"><div><span>Сегодня</span><b>{{ today_work_hours }}</b></div><div><span>За месяц</span><b>{{ month_work_hours }}</b></div></div>
+    </section>
+
+  {% endif %}
 {% endblock %}

@@ -1,16 +1,49 @@
 import django_filters
-from .models import Worker, Site, Report
+from django.forms import DateInput
+from .models import Worker, Site, Report, WorkPlan
 from django_filters.widgets import RangeWidget
+from django_filters import ChoiceFilter
 
 
 class SiteFilter(django_filters.FilterSet):
-    workers = django_filters.ModelChoiceFilter(
-        queryset=Worker.objects.all(), label="Работник"
+    date = django_filters.DateFilter(
+        field_name="latest_plan_date", label="Дата",
+        widget=DateInput(attrs={"type": "date"}),
     )
+    object_number = django_filters.CharFilter(
+        field_name="object_number", lookup_expr="icontains", label="Номер объекта"
+    )
+    name = django_filters.CharFilter(
+        field_name="name", lookup_expr="icontains", label="Объект"
+    )
+    address = django_filters.CharFilter(
+        field_name="address", lookup_expr="icontains", label="Адрес объекта"
+    )
+    site_type = django_filters.ChoiceFilter(
+        choices=Site.SiteType.choices, label="Тип объекта"
+    )
+    state = ChoiceFilter(
+        choices=(
+            ("none", "Без плана"),
+            ("revision", "Отказано"),
+            ("submitted", "На проверке"),
+            ("planned", "Запланирован"),
+            ("approved", "Завершён"),
+        ),
+        label="Состояние",
+        method="filter_state",
+    )
+
+    def filter_state(self, queryset, name, value):
+        if value == "none":
+            return queryset.filter(latest_plan_status__isnull=True)
+        if value in {"planned", "submitted", "revision", "approved"}:
+            return queryset.filter(latest_plan_status=value)
+        return queryset
 
     class Meta:
         model = Site
-        fields = ["workers"]
+        fields = []
 
 
 class WorkerFilter(django_filters.FilterSet):
@@ -24,11 +57,21 @@ class WorkerFilter(django_filters.FilterSet):
 
 
 class ReportFilter(django_filters.FilterSet):
-    site = django_filters.ModelChoiceFilter(
-        queryset=Site.objects.all(), label="Объект"
+    site_name = django_filters.CharFilter(
+        field_name="site__name", lookup_expr="icontains", label="Название объекта"
     )
-    worker = django_filters.ModelChoiceFilter(
-        queryset=Worker.objects.all(), label="Работник"
+    site_number = django_filters.CharFilter(
+        field_name="site__object_number", lookup_expr="icontains", label="Номер объекта"
+    )
+    status = django_filters.ChoiceFilter(
+        choices=(
+            (WorkPlan.Status.PLANNED, "В обработке"),
+            (WorkPlan.Status.SUBMITTED, "Ожидает рассмотрения"),
+            (WorkPlan.Status.REVISION, "Не принят"),
+            (WorkPlan.Status.APPROVED, "Закрыт"),
+        ),
+        label="Статус",
+        method="filter_status",
     )
     date = django_filters.DateFromToRangeFilter(
         field_name="created_at__date",
@@ -38,4 +81,8 @@ class ReportFilter(django_filters.FilterSet):
 
     class Meta:
         model = Report
-        fields = ["site", "worker", "date"]
+        fields = ["date"]
+
+    def filter_status(self, queryset, name, value):
+        # Status is stored on work plans and submissions, not legacy Report rows.
+        return queryset

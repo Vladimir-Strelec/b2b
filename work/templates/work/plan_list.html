@@ -4,17 +4,62 @@
 {% block content %}
 <div class="filters">
   <a class="btn" href="{% url 'plan_create' %}">＋ Создать план</a>
-  <form method="get">
+  <form method="get" id="plan-filter-form">
+    {% if history_mode %}<input type="hidden" name="history" value="1">{% endif %}
     <div><label for="date">Дата</label><input id="date" type="date" name="date" value="{{ request.GET.date }}"></div>
-    <div><label for="worker">Работник</label><select id="worker" name="worker"><option value="">Все</option>{% for w in workers %}<option value="{{ w.pk }}" {% if request.GET.worker == w.pk|stringformat:"s" %}selected{% endif %}>{{ w.name }}</option>{% endfor %}</select></div>
-    <div><label for="site">Объект</label><select id="site" name="site"><option value="">Все</option>{% for s in sites %}<option value="{{ s.pk }}" {% if request.GET.site == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
+    <div><label for="site_number">Номер объекта</label><input id="site_number" name="site_number" value="{{ request.GET.site_number }}" type="search" placeholder="Введите номер" autocomplete="off"></div>
+    <div><label for="site_name">Объект</label><input id="site_name" name="site_name" value="{{ request.GET.site_name }}" type="search" placeholder="Название объекта" autocomplete="off"></div>
+    <div><label for="address">Адрес объекта</label><input id="address" name="address" value="{{ request.GET.address }}" type="search" placeholder="Введите адрес" autocomplete="off"></div>
     <div><label for="site_type">Тип объекта</label><select id="site_type" name="site_type"><option value="">Все</option>{% for value,label in site_types %}<option value="{{ value }}" {% if request.GET.site_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
     <div><label for="status">Статус</label><select id="status" name="status"><option value="">Все</option>{% for value,label in statuses %}<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-    <button class="btn" type="submit">Фильтровать</button><a class="btn btn-light" href="{% url 'plan_list' %}">Сбросить</a>
+    <button class="btn" type="submit">Фильтровать</button>
+    <a class="btn btn-light" href="{% url 'plan_list' %}">Сбросить</a>
+    {% if history_mode %}<a class="btn btn-light" href="{% url 'plan_list' %}">К сегодняшним планам</a>{% else %}<a class="btn btn-light" href="?history=1">Вся история</a>{% endif %}
   </form>
 </div>
-<div class="table-wrap"><table><thead><tr><th>Дата</th><th>Объект</th><th>Работник</th><th>Состояние</th><th></th></tr></thead><tbody>
-{% for plan in object_list %}<tr><td>{{ plan.work_date|date:"d.m.Y" }}</td><td>{{ plan.site.name }} <span class="muted">· {{ plan.site.get_site_type_display }}</span></td><td>{{ plan.worker.name }}</td><td><span class="status status-{{ plan.status }}">{% if plan.status == "approved" %}✓{% elif plan.status == "revision" %}✕{% else %}!{% endif %} {{ plan.get_status_display }}</span></td><td><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть</a></td></tr>
-{% empty %}<tr><td colspan="5" class="muted">Планов пока нет.</td></tr>{% endfor %}
-</tbody></table></div>
+
+<div id="plan-results">
+{% if history_mode %}
+  {% for day, plans in date_groups %}
+    <section class="card plan-day-card">
+      <header class="plan-day-heading"><h2>{{ day|date:"j E Y, l" }}</h2><span class="badge">{{ plans|length }} заданий</span></header>
+      <div class="table-wrap"><table class="plan-table"><thead><tr><th>Объект</th><th>Работник</th><th>Состояние</th><th></th></tr></thead><tbody>
+        {% for plan in plans %}<tr><td><b>{{ plan.site.name }}</b><div class="muted">Тип {{ plan.site.get_site_type_display }} · № {{ plan.site.object_number }}</div></td><td>{{ plan.worker.name }}</td><td><span class="status status-{{ plan.status }}">{% if plan.status == "approved" %}✓{% elif plan.status == "revision" %}✕{% else %}!{% endif %} {{ plan.get_status_display }}</span></td><td><div class="actions"><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть</a>{% if plan.status == "planned" %}<a class="btn btn-light btn-sm" href="{% url 'plan_edit' plan.pk %}">Редактировать</a><a class="btn btn-danger btn-sm" href="{% url 'plan_delete' plan.pk %}">Удалить</a>{% endif %}</div></td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  {% empty %}<p class="muted">Планов по выбранным условиям нет.</p>{% endfor %}
+  {% if is_paginated %}<nav class="pagination">{% if page_obj.has_previous %}<a class="btn btn-light btn-sm" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">← Новее</a>{% endif %}<span class="muted">Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</span>{% if page_obj.has_next %}<a class="btn btn-light btn-sm" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Старее →</a>{% endif %}</nav>{% endif %}
+{% else %}
+  <div class="manager-plans-layout">
+    <section class="card manager-today-plans">
+      <header class="plan-day-heading"><h2>Планы на сегодня</h2><span class="badge">{{ today_plans|length }} заданий</span></header>
+      {% if today_plans %}
+        <div class="table-wrap"><table class="plan-table"><thead><tr><th>Объект</th><th>Работник</th><th>Состояние</th><th></th></tr></thead><tbody>
+          {% for plan in today_plans %}<tr><td><b>{{ plan.site.name }}</b><div class="muted">Тип {{ plan.site.get_site_type_display }} · № {{ plan.site.object_number }}</div></td><td>{{ plan.worker.name }}</td><td><span class="status status-{{ plan.status }}">{% if plan.status == "approved" %}✓{% elif plan.status == "revision" %}✕{% else %}!{% endif %} {{ plan.get_status_display }}</span></td><td><div class="actions"><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть</a>{% if plan.status == "planned" %}<a class="btn btn-light btn-sm" href="{% url 'plan_edit' plan.pk %}">Редактировать</a><a class="btn btn-danger btn-sm" href="{% url 'plan_delete' plan.pk %}">Удалить</a>{% endif %}</div></td></tr>{% endfor %}
+        </tbody></table></div>
+      {% else %}<p class="muted">На сегодня планов нет.</p>{% endif %}
+    </section>
+
+    <aside class="card manager-upcoming-plans">
+      <header class="plan-day-heading"><h2>Запланировано на другие дни</h2><span class="badge">{{ upcoming_count }}</span></header>
+      {% for day, plans in upcoming_groups %}
+        <section class="manager-upcoming-day"><h3>{{ day|date:"j E Y, l" }} <span class="badge">{{ plans|length }}</span></h3>
+          {% for plan in plans %}<article class="manager-upcoming-item"><div><b>{{ plan.site.name }}</b><span>№ {{ plan.site.object_number }} · {{ plan.worker.name }}</span></div><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть</a></article>{% endfor %}
+        </section>
+      {% empty %}<p class="muted">Других запланированных работ нет.</p>{% endfor %}
+    </aside>
+  </div>
+
+  <section class="card manager-completed-plans">
+    <header class="plan-day-heading"><h2>Завершённые планы за прошлые дни</h2></header>
+    {% for day, plans in completed_groups %}
+      <details class="completed-plan-day"><summary>{{ day|date:"j E Y, l" }} <span class="badge">{{ plans|length }} заданий</span></summary>
+        <div class="table-wrap"><table class="plan-table"><thead><tr><th>Объект</th><th>Работник</th><th>Состояние</th><th></th></tr></thead><tbody>
+          {% for plan in plans %}<tr><td><b>{{ plan.site.name }}</b><div class="muted">Тип {{ plan.site.get_site_type_display }} · № {{ plan.site.object_number }}</div></td><td>{{ plan.worker.name }}</td><td><span class="status status-approved">✓ {{ plan.get_status_display }}</span></td><td><a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть</a></td></tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+    {% empty %}<p class="muted">Завершённых планов за прошлые дни нет.</p>{% endfor %}
+  </section>
+{% endif %}
+</div>
 {% endblock %}
