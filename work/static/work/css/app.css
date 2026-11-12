@@ -181,22 +181,29 @@ textarea { width: 100%; min-height: 120px; resize: vertical; }
 .completed-plan-day { border-top: 1px solid var(--border); }
 .completed-plan-day summary { padding: 10px 4px; cursor: pointer; font-weight: 600; }
 .completed-plan-day summary .badge { margin-left: 6px; }
-.manager-plans-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.manager-plans-layout { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(320px, .8fr); gap: 16px; align-items: start; }
 .manager-today-plans, .manager-upcoming-plans, .manager-completed-plans { min-width: 0; }
 .manager-today-plans h2, .manager-upcoming-plans h2, .manager-completed-plans h2 { margin: 0; font-size: 18px; }
-.manager-upcoming-plans { max-height: 580px; overflow-y: auto; }
-.manager-upcoming-day + .manager-upcoming-day { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
-.manager-upcoming-day h3 { margin: 0 0 4px; font-size: 13px; }
-.manager-upcoming-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.manager-upcoming-plans { max-height: 420px; padding: 14px; overflow-y: auto; }
+.manager-upcoming-day + .manager-upcoming-day { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border); }
+.manager-upcoming-day h3 { margin: 0 0 2px; font-size: 13px; }
+.manager-upcoming-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .manager-upcoming-item > div { min-width: 0; overflow-wrap: anywhere; }
 .manager-upcoming-item span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 .plan-table { table-layout: fixed; }
 .plan-table td { overflow-wrap: anywhere; }
-.plan-table .plan-object-number, .plan-table .plan-site-address { overflow-wrap: anywhere; word-break: break-word; }
+.plan-table .plan-object-number, .plan-table .plan-site-address { overflow-wrap: normal; }
+.table-cell-expand { min-width: 0; max-width: 100%; }
+.table-cell-expand summary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.table-cell-full { max-width: 100%; padding-top: 6px; overflow-wrap: anywhere; word-break: break-word; }
+.table-cell-expand:not([open]) .table-cell-full { display: none; }
 .plan-table th:last-child { text-align: right; }
 .plan-table td:last-child .actions { justify-content: flex-end; }
+.manager-today-plans .plan-table .actions { flex-wrap: nowrap; gap: 5px; }
+.manager-today-plans .plan-table .btn-sm { padding: 5px 8px; font-size: 12px; white-space: nowrap; }
 .manager-completed-plans { margin-top: 18px; }
-@media (max-width: 1000px) { .manager-plans-layout { grid-template-columns: minmax(0, 1fr); } .manager-upcoming-plans { max-height: 420px; } }
+@media (max-width: 1000px) { .manager-plans-layout { grid-template-columns: minmax(0, 1fr); } .manager-upcoming-plans { max-height: 360px; } }
+@media (max-width: 720px) { .manager-today-plans .plan-table .actions { flex-wrap: wrap; } }
 @media (max-width: 1000px) { .worker-plans-layout { grid-template-columns: minmax(0, 1fr); } .worker-upcoming-plans { max-height: 420px; } }
 @media (max-width: 720px) { .dashboard-shift-card { align-items: stretch; flex-direction: column; } .shift-totals { flex-wrap: wrap; } }
 
@@ -409,21 +416,23 @@ a.link:hover { text-decoration: underline; }
 .report-table { min-width: 1020px; }
 .report-table td { vertical-align: middle; }
 .report-table .report-description { max-width: 300px; }
-.report-day-table { width: 100%; min-width: 840px; table-layout: fixed; }
+.report-day-table { width: 100%; min-width: 1260px; table-layout: fixed; }
 .report-day-table .report-col-photo { width: 82px; }
+.report-day-table .report-col-object { width: 130px; }
+.report-day-table .report-col-number { width: 175px; }
+.report-day-table .report-col-address { width: 175px; }
 .report-day-table .report-col-status { width: 205px; }
 .report-day-table .report-col-count { width: 115px; }
 .report-day-table .report-col-action { width: 110px; }
 .report-day-table td { overflow-wrap: anywhere; }
 .report-day-table .report-description .clamp { max-width: 100%; }
 .report-time { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
-.report-object-group + .report-object-group .report-object-divider td { border-top: 2px solid var(--border); }
+.report-object-group + .report-object-group tr:first-child td { border-top: 2px solid var(--border); }
 .report-day-card { padding: 14px 16px; }
 .report-day-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .report-day-heading h2 { margin: 0; font-size: 18px; }
 .report-status-section + .report-status-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
 .report-status-section h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 14px; }
-.report-object-divider td { padding: 7px 12px; background: #f5f8fa; border-top: 1px solid var(--border); font-size: 12px; }
 .report-object-cell { border-left: 3px solid var(--accent-soft); }
 .status-unknown { background: #edf1f5; color: #687582; }
 .table-thumb { display: block; width: 58px; height: 58px; object-fit: cover; border-radius: 8px; background: var(--accent-soft); }

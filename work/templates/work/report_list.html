@@ -32,14 +32,16 @@
       <header class="report-day-heading"><h2>{{ day|date:"j E Y, l" }}</h2><span class="badge">{{ day_total }} отчётов</span></header>
       <div class="table-wrap report-table-wrap">
         <table class="report-table report-day-table">
-          <colgroup><col class="report-col-photo"><col class="report-col-description"><col class="report-col-status"><col class="report-col-count"><col class="report-col-action"></colgroup>
-          <thead><tr><th>Фото</th><th>Описание</th><th>Состояние</th><th>Отправки</th><th></th></tr></thead>
+          <colgroup><col class="report-col-photo"><col class="report-col-object"><col class="report-col-number"><col class="report-col-address"><col class="report-col-description"><col class="report-col-status"><col class="report-col-count"><col class="report-col-action"></colgroup>
+          <thead><tr><th>Фото</th><th>Объект</th><th>Номер объекта</th><th>Адрес объекта</th><th>Описание</th><th>Состояние</th><th>Отправки</th><th></th></tr></thead>
           {% for site, reports in object_groups %}
             <tbody class="report-object-group">
-              <tr class="report-object-divider"><td colspan="5"><a class="link" href="{% url 'site_detail' site.pk %}"><b>{{ site.name }}</b></a><span class="muted"> · № {{ site.object_number }} · {{ site.address }}</span></td></tr>
               {% for r in reports %}
                 <tr>
                   <td><img class="table-thumb" src="{{ r.photo_url }}" alt="Фото объекта" loading="lazy"></td>
+                  <td><a class="link" href="{% url 'site_detail' site.pk %}"><b>{{ site.name }}</b></a></td>
+                  <td>{{ site.object_number }}</td>
+                  <td>{{ site.address }}</td>
                   <td class="report-description"><div class="clamp">{{ r.description }}</div><span class="report-time">{{ r.created_at|date:"H:i" }}</span></td>
                   <td>{% if r.status %}<span class="status status-{{ r.status }}">{% if r.status == "approved" %}✓{% elif r.status == "revision" %}✕{% else %}!{% endif %} {{ r.status_label }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
                   <td>{% if r.submission_count > 1 %}{{ r.submission_count }} · {{ r.photo_count }} фото{% else %}1{% endif %}</td>
