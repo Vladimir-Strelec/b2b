@@ -6,22 +6,22 @@
 <main class="task-card card">
   <header class="task-card-header">
     <div>
-      <div class="task-eyebrow">Задание на {{ object.work_date|date:"d.m.Y" }}</div>
-      <h2>{{ object.site.name }}</h2>
+      <div class="task-eyebrow">Задание на {{ display_plan.work_date|date:"d.m.Y" }}</div>
+      <h2>{{ display_plan.site.name }}</h2>
       <div class="task-meta">
-        <span>№ объекта {{ object.site.object_number }}</span>
-        <span class="task-type">Тип объекта {{ object.site.get_site_type_display }}</span>
-        <span>{{ object.site.address }}</span>
+        <span>№ объекта {{ display_plan.site.object_number }}</span>
+        <span class="task-type">Тип объекта {{ display_plan.site.get_site_type_display }}</span>
+        <span>{{ display_plan.site.address }}</span>
       </div>
     </div>
-    <span class="status status-{{ object.status }}">{% if object.status == "approved" %}✓{% elif object.status == "revision" %}✕{% else %}!{% endif %} {{ object.get_status_display }}</span>
+    <span class="status status-{{ display_plan.status }}">{% if display_plan.status == "approved" %}✓{% elif display_plan.status == "revision" %}✕{% else %}!{% endif %} {{ display_plan.get_status_display }}</span>
   </header>
 
   <section class="task-documents">
     <h3>Документация объекта</h3>
-    {% if object.site.documents.exists %}
+    {% if display_plan.site.documents.exists %}
       <ul class="document-list">
-        {% for doc in object.site.documents.all %}
+        {% for doc in display_plan.site.documents.all %}
           <li><a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"sites/" }}</a></li>
         {% endfor %}
       </ul>
@@ -30,23 +30,23 @@
 
   <section class="task-description">
     <h3>Краткое описание к документации</h3>
-    <p>{{ object.description|linebreaksbr }}</p>
+    <p>{{ display_plan.description|linebreaksbr }}</p>
   </section>
 
-  {% if user.is_staff %}<p class="task-worker"><b>Работник:</b> {{ object.worker.name }}</p>{% endif %}
+  {% if user.is_staff %}<p class="task-worker"><b>Работник:</b> {{ display_plan.worker.name }}</p>{% endif %}
 
-  {% if object.status == "revision" %}<div class="alert"><b>Нужно исправить:</b> {{ object.review_comment|linebreaksbr }}</div>{% endif %}
+  {% if display_plan.status == "revision" %}<div class="alert"><b>Нужно исправить:</b> {{ display_plan.review_comment|linebreaksbr }}</div>{% endif %}
 
   {% if user.is_staff %}
     <div class="task-actions">
-      {% if object.status == "planned" %}<div class="actions"><a class="btn btn-light btn-sm" href="{% url 'plan_edit' object.pk %}">Редактировать план</a><a class="btn btn-danger btn-sm" href="{% url 'plan_delete' object.pk %}">Удалить план</a></div>{% endif %}
-      {% if object.status == "submitted" %}
+      {% if display_plan.status == "planned" %}<div class="actions"><a class="btn btn-light btn-sm" href="{% url 'plan_edit' display_plan.pk %}">Редактировать план</a><a class="btn btn-danger btn-sm" href="{% url 'plan_delete' display_plan.pk %}">Удалить план</a></div>{% endif %}
+      {% if display_plan.status == "submitted" %}
         <form method="post" class="review-form">{% csrf_token %}<label for="review_comment">Комментарий, если нужно переделать</label><textarea id="review_comment" name="review_comment" rows="3"></textarea><div class="actions"><button class="btn" name="action" value="approve">✓ Принять работу</button><button class="btn btn-danger" name="action" value="revision">Вернуть на доработку</button></div></form>
-      {% elif object.status == "approved" %}
+      {% elif display_plan.status == "approved" %}
         <form method="post" class="review-form">{% csrf_token %}<p>Если работу приняли по ошибке, её можно снова отправить на проверку.</p><button class="btn btn-light" name="action" value="reopen">Вернуть на проверку</button></form>
       {% endif %}
     </div>
-  {% elif object.status == "submitted" %}
+  {% elif display_plan.status == "submitted" %}
     <div class="alert alert-success task-notice">Отчёт уже на проверке. Если заметили ошибку, исправьте его здесь — обновлённая отправка заменит текущую.</div>
   {% endif %}
 

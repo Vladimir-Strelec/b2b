@@ -426,7 +426,21 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
         ctx["photo_slots"] = list(
             self.object.site.photo_requirements.select_related("category")
         )
-        ctx["current_submission"] = self.object.submissions.order_by("-created_at", "-pk").first()
+        if self.request.user.is_staff:
+            ctx["current_submission"] = WorkSubmission.objects.filter(
+                plan__site_id=self.object.site_id
+            ).select_related("plan__site", "plan__worker").order_by(
+                "-created_at", "-pk"
+            ).first()
+        else:
+            ctx["current_submission"] = self.object.submissions.order_by(
+                "-created_at", "-pk"
+            ).first()
+        ctx["display_plan"] = (
+            ctx["current_submission"].plan
+            if self.request.user.is_staff and ctx["current_submission"]
+            else self.object
+        )
         history = WorkSubmission.objects.filter(plan__site_id=self.object.site_id)
         if not self.request.user.is_staff:
             history = history.filter(plan__worker__user_id=self.request.user.id)
@@ -446,32 +460,36 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
         self.object = self.get_object()
         if request.user.is_staff:
             action = request.POST.get("action")
-            if action == "reopen" and self.object.status == WorkPlan.Status.APPROVED:
-                self.object.status = WorkPlan.Status.SUBMITTED
-                self.object.review_comment = ""
-                self.object.reviewed_at = None
-                self.object.save(update_fields=["status", "review_comment", "reviewed_at"])
-                self._set_latest_submission_status(WorkPlan.Status.SUBMITTED)
+            latest_submission = WorkSubmission.objects.filter(
+                plan__site_id=self.object.site_id
+            ).select_related("plan").order_by("-created_at", "-pk").first()
+            review_plan = latest_submission.plan if latest_submission else self.object
+            if action == "reopen" and review_plan.status == WorkPlan.Status.APPROVED:
+                review_plan.status = WorkPlan.Status.SUBMITTED
+                review_plan.review_comment = ""
+                review_plan.reviewed_at = None
+                review_plan.save(update_fields=["status", "review_comment", "reviewed_at"])
+                self._set_submission_status(latest_submission, WorkPlan.Status.SUBMITTED)
                 messages.success(request, "Работа снова отправлена на проверку.")
-            elif self.object.status != WorkPlan.Status.SUBMITTED:
+            elif review_plan.status != WorkPlan.Status.SUBMITTED:
                 messages.error(request, "Проверить можно только отправленный на проверку план.")
             elif action == "approve":
-                self.object.status = WorkPlan.Status.APPROVED
-                self.object.review_comment = ""
-                self.object.reviewed_at = timezone.now()
-                self.object.save(update_fields=["status", "review_comment", "reviewed_at"])
-                self._set_latest_submission_status(WorkPlan.Status.APPROVED)
+                review_plan.status = WorkPlan.Status.APPROVED
+                review_plan.review_comment = ""
+                review_plan.reviewed_at = timezone.now()
+                review_plan.save(update_fields=["status", "review_comment", "reviewed_at"])
+                self._set_submission_status(latest_submission, WorkPlan.Status.APPROVED)
                 messages.success(request, "Работа принята.")
             elif action == "revision":
                 comment = request.POST.get("review_comment", "").strip()
                 if not comment:
                     messages.error(request, "Напишите, что нужно исправить.")
                 else:
-                    self.object.status = WorkPlan.Status.REVISION
-                    self.object.review_comment = comment
-                    self.object.reviewed_at = timezone.now()
-                    self.object.save(update_fields=["status", "review_comment", "reviewed_at"])
-                    self._set_latest_submission_status(WorkPlan.Status.REVISION, comment)
+                    review_plan.status = WorkPlan.Status.REVISION
+                    review_plan.review_comment = comment
+                    review_plan.reviewed_at = timezone.now()
+                    review_plan.save(update_fields=["status", "review_comment", "reviewed_at"])
+                    self._set_submission_status(latest_submission, WorkPlan.Status.REVISION, comment)
                     messages.success(request, "Работа возвращена на доработку.")
             return redirect("plan_detail", pk=self.object.pk)
 
@@ -529,15 +547,14 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
             ))
         return self.render_to_response(self.get_context_data(photo_formset=formset))
 
-    def _set_latest_submission_status(self, status, review_comment=None):
-        latest = self.object.submissions.order_by("-created_at", "-pk").first()
-        if latest:
-            latest.status = status
+    def _set_submission_status(self, submission, status, review_comment=None):
+        if submission:
+            submission.status = status
             update_fields = ["status"]
             if review_comment is not None:
-                latest.review_comment = review_comment
+                submission.review_comment = review_comment
                 update_fields.append("review_comment")
-            latest.save(update_fields=update_fields)
+            submission.save(update_fields=update_fields)
 
 
 class WorkerPlanListView(LoginRequiredMixin, TemplateView):
