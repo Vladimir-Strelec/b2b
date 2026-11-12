@@ -25,7 +25,7 @@ from django.db import IntegrityError, transaction
 from django.utils.dateparse import parse_date
 from django_filters.views import FilterView
 
-from .filters import ReportFilter, SiteFilter, WorkerFilter
+from .filters import ReportFilter, SiteFilter
 from .forms import (
     ReportForm, SiteForm, SitePhotoRequirementFormSet, WorkerForm,
     WorkPlanForm, WorkPhotoForm, RequiredSlotInlineFormSet,
@@ -726,10 +726,12 @@ class SiteDeleteView(StaffRequiredMixin, DeleteView):
 
 # ---------- Работники ----------
 
-class WorkerListView(StaffRequiredMixin, FilterView):
+class WorkerListView(StaffRequiredMixin, ListView):
     model = Worker
-    filterset_class = WorkerFilter
     template_name = "work/worker_list.html"
+
+    def get_queryset(self):
+        return Worker.objects.order_by("name", "pk")
 
 
 class WorkerDetailView(StaffRequiredMixin, DetailView):
