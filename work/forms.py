@@ -39,6 +39,8 @@ class SiteForm(forms.ModelForm):
         self.fields["name"].error_messages["required"] = "Укажите название объекта."
         self.fields["object_number"].error_messages["required"] = "Укажите номер объекта."
         self.fields["address"].error_messages["required"] = "Укажите адрес объекта."
+        self.fields["name"].widget.attrs["required"] = "required"
+        self.fields["address"].widget.attrs["required"] = "required"
         self.fields["site_type"].choices = [("", "Выберите тип объекта")] + list(Site.SiteType.choices)
         self.fields["site_type"].required = True
         self.fields["site_type"].error_messages["required"] = "Выберите тип объекта A, B, C или D."
@@ -49,7 +51,23 @@ class SiteForm(forms.ModelForm):
         object_number = self.cleaned_data["object_number"].strip()
         if not object_number:
             raise forms.ValidationError("Введите номер объекта, чтобы сохранить объект.")
+        duplicates = Site.objects.filter(object_number__iexact=object_number)
+        if self.instance.pk:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise forms.ValidationError("Объект с таким номером уже существует. Укажите уникальный номер.")
         return object_number
+
+    def clean_address(self):
+        address = self.cleaned_data["address"].strip()
+        if not address:
+            raise forms.ValidationError("Укажите адрес объекта.")
+        duplicates = Site.objects.filter(address__iexact=address)
+        if self.instance.pk:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise forms.ValidationError("Объект с таким адресом уже существует. Укажите уникальный адрес.")
+        return address
 
 
 class SitePhotoRequirementForm(forms.ModelForm):
