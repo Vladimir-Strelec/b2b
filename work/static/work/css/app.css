@@ -120,7 +120,7 @@ textarea { width: 100%; min-height: 120px; resize: vertical; }
 .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 18px; }
 .filters form { display: contents; }
 .filters form > div, .filters form > p { margin: 0; }
-.site-filter-form > button { margin-left: auto; }
+.site-filter-form > button { margin-left: 0; }
 .filters label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .site-search-field { position: relative; min-width: 220px; }
 .site-list-search { flex: 1 1 440px; min-width: min(100%, 320px); max-width: 560px; }
