@@ -828,31 +828,21 @@ class ReportListView(StaffRequiredMixin, FilterView):
         }
         entries.sort(key=lambda report: report.created_at, reverse=True)
         entries.sort(key=lambda report: status_order.get(report.status, 4))
+        entries.sort(key=lambda report: report.site.name.casefold())
         entries.sort(
             key=lambda report: timezone.localtime(report.created_at).date(),
             reverse=True,
         )
         ctx["object_list"] = entries
-        status_labels = {
-            WorkPlan.Status.SUBMITTED: "Ожидает рассмотрения",
-            WorkPlan.Status.PLANNED: "В обработке",
-            WorkPlan.Status.REVISION: "Не принят",
-            WorkPlan.Status.APPROVED: "Закрыт",
-            None: "Статус не указан",
-        }
         report_days = []
         for day, day_items in groupby(
             entries, key=lambda report: timezone.localtime(report.created_at).date()
         ):
-            status_groups = []
-            for status_value, status_items in groupby(day_items, key=lambda report: report.status):
-                status_items = list(status_items)
-                status_groups.append({
-                    "status": status_value,
-                    "label": status_labels.get(status_value, "Статус не указан"),
-                    "items": status_items,
-                })
-            report_days.append((day, status_groups, sum(len(group["items"]) for group in status_groups)))
+            object_groups = [
+                (site, list(site_reports))
+                for site, site_reports in groupby(day_items, key=lambda report: report.site)
+            ]
+            report_days.append((day, object_groups, sum(len(items) for _, items in object_groups)))
         ctx["report_days"] = report_days
         return ctx
 

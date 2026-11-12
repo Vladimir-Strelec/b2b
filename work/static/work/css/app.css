@@ -371,6 +371,15 @@ a.link:hover { text-decoration: underline; }
 .report-table { min-width: 1020px; }
 .report-table td { vertical-align: middle; }
 .report-table .report-description { max-width: 300px; }
+.report-day-table { width: 100%; min-width: 840px; table-layout: fixed; }
+.report-day-table .report-col-photo { width: 82px; }
+.report-day-table .report-col-status { width: 205px; }
+.report-day-table .report-col-count { width: 115px; }
+.report-day-table .report-col-action { width: 110px; }
+.report-day-table td { overflow-wrap: anywhere; }
+.report-day-table .report-description .clamp { max-width: 100%; }
+.report-time { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.report-object-group + .report-object-group .report-object-divider td { border-top: 2px solid var(--border); }
 .report-day-card { padding: 14px 16px; }
 .report-day-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .report-day-heading h2 { margin: 0; font-size: 18px; }
