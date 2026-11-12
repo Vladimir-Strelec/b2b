@@ -24,7 +24,7 @@
         <tbody>
         {% for worker in object_list %}
         <tr>
-            <td><b>{{ worker.name }}</b></td>
+            <td><a class="link" href="{% url 'worker_detail' worker.pk %}"><b>{{ worker.name }}</b></a></td>
             <td>{{ worker.phone }}</td>
             <td>
                 {% for s in worker.sites.all %}

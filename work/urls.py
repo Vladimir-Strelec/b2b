@@ -23,6 +23,7 @@ urlpatterns = [
     path("sites/<int:pk>/delete/", views.SiteDeleteView.as_view(), name="site_delete"),
     path("sites/<int:pk>/revert-completion/", views.SiteRevertCompletionView.as_view(), name="site_revert_completion"),
     path("workers/new/", views.WorkerCreateView.as_view(), name="worker_create"),
+    path("workers/<int:pk>/", views.WorkerDetailView.as_view(), name="worker_detail"),
     path("workers/<int:pk>/edit/", views.WorkerUpdateView.as_view(), name="worker_edit"),
     path("workers/<int:pk>/delete/", views.WorkerDeleteView.as_view(), name="worker_delete"),
 

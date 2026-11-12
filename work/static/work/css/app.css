@@ -135,6 +135,24 @@ textarea { width: 100%; min-height: 120px; resize: vertical; }
 .site-search-hint { align-self: center; font-size: 12px; }
 .dashboard-hours-card h2, .dashboard-shift-card h2, .upcoming-plans-card h2 { margin: 0 0 14px; font-size: 18px; }
 .dashboard-hours-card { margin-top: 18px; }
+.worker-profile-top { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(420px, 1.6fr); gap: 16px; margin-bottom: 18px; }
+.worker-profile-contact { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.worker-profile-contact > div { display: flex; flex-direction: column; gap: 4px; }
+.worker-profile-contact .worker-profile-current { margin-left: auto; }
+.worker-profile-current small { color: var(--muted); }
+.worker-time-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.worker-time-stats article { display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+.worker-time-stats article span { color: var(--muted); font-size: 13px; }
+.worker-time-stats article b { font-size: 20px; }
+.worker-period-card { margin-bottom: 18px; }
+.worker-period-card h2 { margin: 4px 0 0; font-size: 18px; }
+.worker-period-filter { display: flex; align-items: end; gap: 12px; margin: 14px 0; }
+.worker-period-filter > div { min-width: 140px; }
+.worker-period-filter label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; }
+.worker-period-filter select { width: 100%; }
+.worker-shift-table { min-width: 580px; }
+@media (max-width: 900px) { .worker-profile-top { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .worker-time-stats { grid-template-columns: minmax(0, 1fr); } .worker-period-filter { align-items: stretch; flex-direction: column; } }
 .dashboard-shift-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 18px; }
 .dashboard-shift-card p { margin: 0 0 12px; }
 .shift-totals { display: flex; gap: 18px; }

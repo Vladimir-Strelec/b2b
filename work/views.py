@@ -1,6 +1,6 @@
 from itertools import groupby
 from types import SimpleNamespace
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.forms import inlineformset_factory
@@ -730,6 +730,80 @@ class WorkerListView(StaffRequiredMixin, FilterView):
     model = Worker
     filterset_class = WorkerFilter
     template_name = "work/worker_list.html"
+
+
+class WorkerDetailView(StaffRequiredMixin, DetailView):
+    model = Worker
+    template_name = "work/worker_detail.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        worker = self.object
+        today = timezone.localdate()
+        now = timezone.now()
+        try:
+            year = int(self.request.GET.get("year", today.year))
+            if year < 2000 or year > today.year + 1:
+                year = today.year
+        except (TypeError, ValueError):
+            year = today.year
+        try:
+            month = int(self.request.GET.get("month", today.month))
+            if month not in range(1, 13):
+                month = today.month
+        except (TypeError, ValueError):
+            month = today.month
+
+        month_start = timezone.make_aware(datetime(year, month, 1))
+        next_month = date(year + (month == 12), month % 12 + 1, 1)
+        month_end = timezone.make_aware(datetime.combine(next_month, time.min))
+        year_start = timezone.make_aware(datetime(year, 1, 1))
+        next_year = timezone.make_aware(datetime(year + 1, 1, 1))
+        day_start, day_end = _day_bounds(today)
+
+        all_shifts = WorkShift.objects.filter(worker=worker, started_at__lt=now).order_by("started_at")
+        month_shifts = all_shifts.filter(
+            started_at__lt=month_end,
+        ).filter(Q(ended_at__gt=month_start) | Q(ended_at__isnull=True))
+        year_shifts = all_shifts.filter(
+            started_at__lt=next_year,
+        ).filter(Q(ended_at__gt=year_start) | Q(ended_at__isnull=True))
+        current_shift = WorkShift.objects.filter(worker=worker, ended_at__isnull=True).order_by("-started_at").first()
+        today_seconds = _shift_seconds(all_shifts, day_start, min(day_end, now))
+        month_seconds = _shift_seconds(month_shifts, month_start, min(month_end, now))
+        year_seconds = _shift_seconds(year_shifts, year_start, min(next_year, now))
+
+        shift_rows = []
+        for shift in month_shifts.order_by("-started_at"):
+            end = min(shift.ended_at or now, month_end)
+            start = max(shift.started_at, month_start)
+            shift_rows.append({
+                "shift": shift,
+                "duration": _format_hours(int(max(0, (end - start).total_seconds()))),
+            })
+
+        month_options = [
+            (1, "Январь"), (2, "Февраль"), (3, "Март"), (4, "Апрель"),
+            (5, "Май"), (6, "Июнь"), (7, "Июль"), (8, "Август"),
+            (9, "Сентябрь"), (10, "Октябрь"), (11, "Ноябрь"), (12, "Декабрь"),
+        ]
+        ctx.update({
+            "selected_year": year,
+            "selected_month": month,
+            "selected_month_label": dict(month_options)[month],
+            "year_options": range(min(year, today.year) - 4, max(year, today.year) + 1),
+            "month_options": month_options,
+            "today_hours": _format_hours(today_seconds),
+            "month_hours": _format_hours(month_seconds),
+            "year_hours": _format_hours(year_seconds),
+            "current_shift": current_shift,
+            "shift_over_eight_hours": bool(current_shift and now - current_shift.started_at >= timedelta(hours=8)),
+            "shift_rows": shift_rows,
+            "period_plans": WorkPlan.objects.filter(
+                worker=worker, work_date__year=year, work_date__month=month,
+            ).select_related("site").order_by("-work_date", "site__name", "pk"),
+        })
+        return ctx
 
 
 class WorkerCreateView(StaffRequiredMixin, CreateView):

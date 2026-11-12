@@ -24,7 +24,7 @@
           <tbody>
           {% for row in worker_time_rows %}
             <tr>
-              <td><b>{{ row.worker.name }}</b></td>
+              <td><a class="link" href="{% url 'worker_detail' row.worker.pk %}"><b>{{ row.worker.name }}</b></a><div class="muted">{{ row.worker.phone }}</div></td>
               <td>{% if row.current_shift %}<span class="status {% if row.over_eight_hours %}status-revision{% else %}status-approved{% endif %}" data-shift-start="{{ row.current_shift.started_at|date:'c' }}" data-on-time="● На смене" data-overdue="⚠ Смена больше 8 часов">{% if row.over_eight_hours %}⚠ Смена больше 8 часов{% else %}● На смене{% endif %}</span>{% else %}<span class="status status-planned">● Не на смене</span>{% endif %}</td>
               <td>{% if row.current_shift %}{{ row.current_shift.started_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
               <td>{{ row.today_hours }}</td>
