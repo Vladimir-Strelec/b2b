@@ -1,5 +1,6 @@
 import django_filters
-from django.forms import DateInput
+from django.forms import DateInput, TextInput
+from django.db.models import Q
 from .models import Worker, Site, Report, WorkPlan
 from django_filters.widgets import RangeWidget
 from django_filters import ChoiceFilter
@@ -10,14 +11,14 @@ class SiteFilter(django_filters.FilterSet):
         field_name="latest_plan_date", label="Дата",
         widget=DateInput(attrs={"type": "date"}),
     )
-    object_number = django_filters.CharFilter(
-        field_name="object_number", lookup_expr="icontains", label="Номер объекта"
-    )
-    name = django_filters.CharFilter(
-        field_name="name", lookup_expr="icontains", label="Объект"
-    )
-    address = django_filters.CharFilter(
-        field_name="address", lookup_expr="icontains", label="Адрес объекта"
+    site_search = django_filters.CharFilter(
+        label="Объект",
+        method="filter_site_search",
+        widget=TextInput(attrs={
+            "type": "search",
+            "placeholder": "Введите название, номер или адрес объекта",
+            "autocomplete": "off",
+        }),
     )
     site_type = django_filters.ChoiceFilter(
         choices=Site.SiteType.choices, label="Тип объекта"
@@ -45,6 +46,15 @@ class SiteFilter(django_filters.FilterSet):
         if value in {"planned", "submitted", "revision"}:
             return queryset.filter(latest_plan_status=value, is_completed=False)
         return queryset
+
+    def filter_site_search(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(
+            Q(name__icontains=value)
+            | Q(object_number__icontains=value)
+            | Q(address__icontains=value)
+        )
 
     class Meta:
         model = Site

@@ -63,29 +63,17 @@
   });
 })();
 
-// Live object lookup by number and address, with matching object suggestions.
+// Search objects by name, number, or address in one field with suggestions.
 (function () {
   var form = document.getElementById("site-filter-form");
   var results = document.getElementById("site-results");
   if (!form || !results) return;
 
-  var numberInput = form.querySelector('[name="object_number"]');
-  var nameInput = form.querySelector('[name="name"]');
-  var addressInput = form.querySelector('[name="address"]');
-  if (!numberInput || !nameInput || !addressInput) return;
+  var input = form.querySelector('[name="site_search"]');
+  var panel = form.querySelector(".site-suggestions");
+  var toggle = form.querySelector(".site-search-toggle");
+  if (!input || !panel || !toggle) return;
 
-  function makeSuggestions(input) {
-    var panel = document.createElement("div");
-    panel.className = "site-suggestions";
-    panel.hidden = true;
-    input.parentElement.classList.add("site-search-field");
-    input.parentElement.appendChild(panel);
-    return panel;
-  }
-
-  var numberPanel = makeSuggestions(numberInput);
-  var addressPanel = makeSuggestions(addressInput);
-  var activeInput = null;
   var debounceTimer = null;
   var requestController = null;
 
@@ -98,37 +86,39 @@
   }
 
   function hideSuggestions() {
-    numberPanel.hidden = true;
-    addressPanel.hidden = true;
+    panel.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
   }
 
-  function fillSuggestions(panel, input, rows, attr) {
+  function fillSuggestions(rows) {
     panel.replaceChildren();
     var seen = new Set();
     rows.forEach(function (row) {
       var cell = row.querySelector("[data-object-number]");
       var addressCell = row.querySelector("[data-address]");
       if (!cell || !addressCell) return;
-      var value = attr === "data-object-number" ? cell.dataset.objectNumber : addressCell.dataset.address;
-      if (!value || seen.has(value)) return;
-      seen.add(value);
+      var number = cell.dataset.objectNumber;
+      var name = row.cells[1] ? row.cells[1].innerText.split("\n")[0].trim() : "Объект";
+      var key = number || (name + "|" + addressCell.dataset.address);
+      if (seen.has(key)) return;
+      seen.add(key);
       var button = document.createElement("button");
       button.type = "button";
       button.className = "site-suggestion";
-      button.textContent = value;
+      button.textContent = name;
       var detail = document.createElement("small");
-      detail.textContent = (row.cells[1] ? row.cells[1].innerText.split("\n")[0] : "") + " · " + addressCell.dataset.address;
+      detail.textContent = (number ? "№ " + number + " · " : "") + addressCell.dataset.address;
       button.appendChild(detail);
       button.addEventListener("click", function () {
-        input.value = value;
-        activeInput = input;
+        input.value = number || name;
         hideSuggestions();
-        refreshResults(true);
+        refreshResults(false);
         input.focus();
       });
       panel.appendChild(button);
     });
     panel.hidden = panel.childElementCount === 0;
+    toggle.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
   }
 
   function refreshResults(showSuggestions) {
@@ -145,10 +135,8 @@
         if (!freshBody || !currentBody) return;
         currentBody.replaceWith(freshBody);
         window.history.replaceState(null, "", url);
-        if (showSuggestions && activeInput) {
-          var rows = Array.from(freshBody.querySelectorAll("tr"));
-          if (activeInput === numberInput) fillSuggestions(numberPanel, numberInput, rows, "data-object-number");
-          else fillSuggestions(addressPanel, addressInput, rows, "data-address");
+        if (showSuggestions) {
+          fillSuggestions(Array.from(freshBody.querySelectorAll("tr")));
         } else {
           hideSuggestions();
         }
@@ -158,22 +146,25 @@
       });
   }
 
-  function scheduleSearch(input) {
-    activeInput = input;
+  function scheduleSearch() {
     window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(function () { refreshResults(true); }, 250);
   }
 
-  numberInput.addEventListener("input", function () { scheduleSearch(numberInput); });
-  nameInput.addEventListener("input", function () { activeInput = null; window.clearTimeout(debounceTimer); debounceTimer = window.setTimeout(function () { refreshResults(false); }, 250); });
-  addressInput.addEventListener("input", function () { scheduleSearch(addressInput); });
-  [numberInput, addressInput].forEach(function (input) {
-    input.addEventListener("focus", function () { activeInput = input; });
+  input.addEventListener("input", scheduleSearch);
+  input.addEventListener("focus", function () {
+    if (input.value.trim()) scheduleSearch();
   });
   form.querySelectorAll('select').forEach(function (input) {
-    input.addEventListener("change", function () { activeInput = null; refreshResults(false); });
+    input.addEventListener("change", function () { refreshResults(false); });
   });
   form.addEventListener("submit", function (event) { event.preventDefault(); refreshResults(false); });
+  toggle.addEventListener("click", function () {
+    window.clearTimeout(debounceTimer);
+    input.value = "";
+    refreshResults(true);
+    input.focus();
+  });
   document.addEventListener("click", function (event) {
     if (!form.contains(event.target)) hideSuggestions();
   });

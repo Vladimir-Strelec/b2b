@@ -5,8 +5,26 @@
   <div class="filters">
     {% if not completed_only %}<a class="btn" href="{% url 'site_create' %}">+ Добавить объект</a>{% endif %}
     <form method="get" id="site-filter-form" class="site-filter-form">
-      {{ filter.form.as_div }}
-      <span class="muted site-search-hint">Результаты обновляются при вводе</span>
+      <div>
+        <label for="{{ filter.form.date.id_for_label }}">Дата:</label>
+        {{ filter.form.date }}
+      </div>
+      <div class="site-search-field site-list-search">
+        <label for="{{ filter.form.site_search.id_for_label }}">Объект — поиск по названию, номеру или адресу:</label>
+        <div class="site-search-control">
+          {{ filter.form.site_search }}
+          <button class="site-search-toggle" type="button" aria-label="Показать все объекты" aria-expanded="false">▾</button>
+        </div>
+        <div class="site-suggestions" hidden></div>
+      </div>
+      <div>
+        <label for="{{ filter.form.site_type.id_for_label }}">Тип объекта:</label>
+        {{ filter.form.site_type }}
+      </div>
+      <div>
+        <label for="{{ filter.form.state.id_for_label }}">Состояние:</label>
+        {{ filter.form.state }}
+      </div>
       <button class="btn" type="submit">Фильтровать</button>
     </form>
   </div>
