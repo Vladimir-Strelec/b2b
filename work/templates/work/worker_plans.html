@@ -2,11 +2,11 @@
 {% block title %}Мои планы работы{% endblock %}
 {% block heading %}Мои планы работы{% endblock %}
 {% block content %}
-<form method="get" class="filters worker-plan-filters">
+<form method="get" class="filters worker-plan-filters" data-auto-submit>
   {% if history_mode %}<input type="hidden" name="history" value="1">{% endif %}
   <div><label for="date">История по дате</label><input id="date" type="date" name="date" value="{{ selected_date }}"></div>
   <div><label for="status">Состояние</label><select id="status" name="status"><option value="">Все состояния</option>{% for value,label in statuses %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-  <button class="btn" type="submit">Показать историю</button>
+  <a class="btn btn-light" href="{% url 'worker_plans' %}">Сбросить</a>
   {% if history_mode %}<a class="btn btn-light" href="{% url 'worker_plans' %}">К актуальным планам</a>{% else %}<a class="btn btn-light" href="?history=1">Вся история</a>{% endif %}
 </form>
 

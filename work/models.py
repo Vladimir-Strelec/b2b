@@ -47,6 +47,7 @@ class Site(models.Model):
     object_number = models.CharField("Номер объекта", max_length=50, default="")
     address = models.CharField("Адрес", max_length=255)
     site_type = models.CharField("Тип объекта", max_length=1, choices=SiteType.choices, default=SiteType.A)
+    created_at = models.DateTimeField("Дата создания", auto_now_add=True, null=True, blank=True)
     is_completed = models.BooleanField("Объект завершён", default=False, db_index=True)
     workers = models.ManyToManyField(
         Worker, related_name="sites", blank=True, verbose_name="Работники"
@@ -166,6 +167,22 @@ class WorkSubmission(models.Model):
 
     def __str__(self):
         return f"{self.plan} · {self.created_at:%d.%m.%Y %H:%M}"
+
+
+class WorkSubmissionOfficeNote(models.Model):
+    submission = models.ForeignKey(
+        WorkSubmission, on_delete=models.CASCADE, related_name="office_notes",
+    )
+    text = models.TextField("Дополнение от Office")
+    created_at = models.DateTimeField("Добавлено", auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        verbose_name = "Дополнение Office к отчёту"
+        verbose_name_plural = "Дополнения Office к отчётам"
+
+    def __str__(self):
+        return f"Дополнение Office · отправка {self.submission_id} · {self.created_at:%d.%m.%Y %H:%M}"
 
 
 class WorkPhoto(models.Model):

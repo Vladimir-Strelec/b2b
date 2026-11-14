@@ -25,10 +25,11 @@
 
 <section class="card worker-period-card">
   <header class="section-heading"><div><div class="eyebrow">Учёт времени</div><h2>График смен</h2></div></header>
-  <form method="get" class="worker-period-filter">
+  <form method="get" class="worker-period-filter" data-auto-submit>
     <div><label for="worker-month">Месяц</label><select id="worker-month" name="month">{% for value,label in month_options %}<option value="{{ value }}" {% if selected_month == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
     <div><label for="worker-year">Год</label><select id="worker-year" name="year">{% for value in year_options %}<option value="{{ value }}" {% if selected_year == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></div>
-    <button class="btn" type="submit">Показать</button>
+    <div><label for="worker-date-from">С даты</label><input id="worker-date-from" name="date_from" type="date" value="{{ date_from }}"></div>
+    <div><label for="worker-date-to">По дату</label><input id="worker-date-to" name="date_to" type="date" value="{{ date_to }}"></div>
   </form>
   <div class="table-wrap">
     <table class="worker-shift-table">
@@ -36,7 +37,7 @@
       <tbody>
       {% for row in shift_rows %}
         <tr><td>{{ row.shift.started_at|date:"d.m.Y H:i" }}</td><td>{% if row.shift.ended_at %}{{ row.shift.ended_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td><td>{% if row.shift.ended_at %}<span class="status status-approved">Завершена</span>{% else %}<span class="status status-planned">Активна</span>{% endif %}</td><td>{{ row.duration }}</td></tr>
-      {% empty %}<tr><td colspan="4" class="muted">За выбранный месяц смен нет.</td></tr>{% endfor %}
+      {% empty %}<tr><td colspan="4" class="muted">{% if selected_shift_range %}За выбранный период смен нет.{% else %}За выбранный месяц смен нет.{% endif %}</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
@@ -54,4 +55,9 @@
   </div>
 </section>
 <a class="btn btn-light" href="{% url 'worker_list' %}">← К работникам</a>
+<section class="card worker-danger-zone">
+  <h2>Удаление работника</h2>
+  <p class="muted">Удаление работника также затронет связанные планы, смены, отчёты и учётную запись.</p>
+  <a class="btn btn-danger btn-sm" href="{% url 'worker_delete' object.pk %}">Удалить работника</a>
+</section>
 {% endblock %}

@@ -1,6 +1,8 @@
 from django import forms
 from django.forms import inlineformset_factory, BaseInlineFormSet
 from django.contrib.auth import get_user_model
+from django.db.models import Q
+from django.utils import timezone
 from .models import (
     Report, Site, SitePhotoRequirement, Worker, WorkPlan, WorkSubmission,
     WorkPhoto, PhotoCategory,
@@ -138,12 +140,29 @@ class WorkPlanForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        available_sites = Site.objects.filter(is_completed=False)
+        if self.instance and self.instance.pk and self.instance.site_id:
+            # Keep the current value available while editing an existing plan,
+            # even if its site was completed after the plan was created.
+            available_sites = Site.objects.filter(
+                Q(is_completed=False) | Q(pk=self.instance.site_id)
+            )
+        self.fields["site"].queryset = available_sites.order_by("name")
+        self.fields["work_date"].widget.attrs["min"] = timezone.localdate().isoformat()
         self.fields["description"].label = "Краткое описание к документации"
         self.fields["worker"].queryset = Worker.objects.select_related("user").filter(user__isnull=False).order_by("name")
         self.fields["work_date"].error_messages["required"] = "Укажите дату плана."
         self.fields["site"].error_messages["required"] = "Выберите объект."
         self.fields["worker"].error_messages["required"] = "Выберите работника."
         self.fields["description"].error_messages["required"] = "Добавьте краткое описание к документации."
+
+    def clean_work_date(self):
+        work_date = self.cleaned_data["work_date"]
+        if work_date < timezone.localdate():
+            raise forms.ValidationError(
+                "Нельзя создать план на прошедшую дату. Выберите сегодня или будущий день."
+            )
+        return work_date
 
 
 class WorkPhotoForm(forms.ModelForm):
@@ -168,6 +187,13 @@ class WorkPhotoForm(forms.ModelForm):
         if slot:
             self.initial["photo_slot"] = slot.pk
         self.fields["image"].error_messages["required"] = "Добавьте фотографию."
+
+    def has_changed(self):
+        # A correction is a new submission, so inherited photo defaults must
+        # be saved into its new rows even when the worker keeps them unchanged.
+        if not self.instance.pk and self.initial.get("image"):
+            return True
+        return super().has_changed()
 
 
 class RequiredSlotInlineFormSet(BaseInlineFormSet):

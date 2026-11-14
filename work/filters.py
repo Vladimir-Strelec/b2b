@@ -8,7 +8,7 @@ from django_filters import ChoiceFilter
 
 class SiteFilter(django_filters.FilterSet):
     date = django_filters.DateFilter(
-        field_name="latest_plan_date", label="Дата",
+        field_name="created_at__date", label="Дата создания объекта",
         widget=DateInput(attrs={"type": "date"}),
     )
     site_search = django_filters.CharFilter(

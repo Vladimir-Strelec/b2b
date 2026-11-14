@@ -299,6 +299,9 @@
   form.querySelectorAll('select').forEach(function (input) {
     input.addEventListener("change", function () { refreshResults(false); });
   });
+  form.querySelectorAll('input[type="date"]').forEach(function (input) {
+    input.addEventListener("change", function () { refreshResults(false); });
+  });
   form.addEventListener("submit", function (event) { event.preventDefault(); refreshResults(false); });
   toggle.addEventListener("click", function () {
     window.clearTimeout(debounceTimer);
@@ -308,6 +311,18 @@
   });
   document.addEventListener("click", function (event) {
     if (!form.contains(event.target)) hideSuggestions();
+  });
+})();
+
+// Submit date and select filters immediately on regular GET forms.
+(function () {
+  document.querySelectorAll('form[data-auto-submit][method="get"]').forEach(function (form) {
+    form.querySelectorAll('input[type="date"], select').forEach(function (field) {
+      field.addEventListener("change", function () {
+        if (typeof form.requestSubmit === "function") form.requestSubmit();
+        else form.submit();
+      });
+    });
   });
 })();
 

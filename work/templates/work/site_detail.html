@@ -2,8 +2,8 @@
 {% block title %}{{ object.name }}{% endblock %}
 {% block heading %}{{ object.name }}{% endblock %}
 {% block content %}
-  <div class="detail-head">
-    <div class="muted">№ {{ object.object_number }} · Тип {{ object.get_site_type_display }} · {{ object.address }}</div>
+  <div class="detail-head site-detail-head">
+    <div class="muted">№ {{ object.object_number|default:"—" }} · Тип {{ object.get_site_type_display }} · {{ object.address }}</div>
     <div class="actions">
       <a class="btn btn-light btn-sm" href="{% url 'site_list' %}">← Все объекты</a>
       {% if object.is_completed %}
@@ -13,64 +13,122 @@
         <form method="post" action="{% url 'site_complete' object.pk %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Завершить объект</button></form>
       {% else %}
         <button class="btn btn-light btn-sm" type="button" disabled title="Сначала примите все отчёты по планам объекта">Завершить объект</button>
-        <span class="muted">Сначала примите все отчёты по планам объекта.</span>
       {% endif %}
       <a class="btn btn-sm" href="{% url 'site_edit' object.pk %}">Изменить</a>
-      <a class="btn btn-danger btn-sm" href="{% url 'site_delete' object.pk %}">Удалить</a>
     </div>
   </div>
 
-  <div class="card site-setup-summary">
-    <div>
-      <h2>Обязательные фото <span class="badge">{{ object.photo_requirements.count }}</span></h2>
-      <ol class="photo-requirement-list">
-        {% for requirement in photo_requirements %}
+  <div class="site-detail-grid">
+    <section class="card site-main-info">
+      <h2>Основная информация</h2>
+      <dl class="site-info-list">
+        <dt>Название</dt><dd>{{ object.name }}</dd>
+        <dt>Номер объекта</dt><dd>{{ object.object_number|default:"Не указан" }}</dd>
+        <dt>Адрес</dt><dd>{{ object.address }}</dd>
+        <dt>Тип</dt><dd>{{ object.get_site_type_display }}</dd>
+        <dt>Состояние объекта</dt><dd>{% if object.is_completed %}<span class="status status-approved">Завершён</span>{% elif plans %}<span class="status status-planned">Ведутся работы</span>{% else %}<span class="status">Ожидает назначения работ</span>{% endif %}</dd>
+      </dl>
+
+      <div class="site-info-subsection">
+        <h3>Требуемые фото <span class="badge">{{ photo_requirements|length }}</span></h3>
+        <ul class="site-requirement-list">
+          {% for requirement in photo_requirements %}
+            <li><span>{{ requirement.category.name }}</span><span class="status status-{% if requirement.progress_status == 'missing' %}planned{% else %}{{ requirement.progress_status }}{% endif %}">{{ requirement.progress_label }}</span></li>
+          {% empty %}<li class="muted">Требуемые фото не настроены.</li>{% endfor %}
+        </ul>
+      </div>
+
+      <div class="site-info-subsection">
+        <h3>Документы объекта <span class="badge">{{ object.documents.count }}</span></h3>
+        <ul class="document-list">
+          {% for doc in object.documents.all %}
+            <li><a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"sites/" }}</a></li>
+          {% empty %}<li class="muted">Документы не добавлены.</li>{% endfor %}
+        </ul>
+      </div>
+    </section>
+
+    <section class="card site-related-info">
+      <h2>Работники <span class="badge">{{ site_workers|length }}</span></h2>
+      <ul class="site-worker-list">
+        {% for worker in site_workers %}
           <li>
-            <strong>{{ requirement.category.name }}</strong>
-            <span class="status status-{% if requirement.progress_status == 'missing' %}planned{% else %}{{ requirement.progress_status }}{% endif %}">
-              {{ requirement.progress_label }}
-            </span>
+            <div><a class="link" href="{% url 'worker_detail' worker.pk %}"><b>{{ worker.name }}</b></a><span class="muted">{{ worker.phone|default:"Телефон не указан" }}{% if worker.site_plan_count %} · планов по объекту: {{ worker.site_plan_count }}{% endif %}</span></div>
+            <a class="btn btn-light btn-sm" href="{% url 'worker_detail' worker.pk %}">Работник</a>
           </li>
-        {% empty %}
-          <li class="muted">Фото пока не настроены.</li>
-        {% endfor %}
-      </ol>
-    </div>
-    <div>
-      <h2>Документация объекта <span class="badge">{{ object.documents.count }}</span></h2>
-      <ul class="document-list">
-        {% for doc in object.documents.all %}
-          <li><a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"sites/" }}</a></li>
-        {% empty %}
-          <li class="muted">Документы не добавлены.</li>
-        {% endfor %}
+        {% empty %}<li class="muted">Работники к объекту пока не назначены.</li>{% endfor %}
       </ul>
-    </div>
+
+      <div class="site-info-subsection">
+        <h3>Отчёты <span class="badge">{{ report_total }}</span></h3>
+        <div class="site-report-list">
+          {% for report in reports %}
+            <article class="site-report-entry">
+              <div class="site-report-entry-head"><b>{{ report.worker.name }}</b><time>{{ report.created_at|date:"d.m.Y H:i" }}</time></div>
+              {% if report.status %}<span class="status status-{{ report.status }}">Отчёт: {{ report.status_label }}</span>{% else %}<span class="status status-unknown">Старый отчёт · статус не сохранялся</span>{% endif %}
+              <p>{{ report.description|default:"Описание отсутствует"|truncatechars:220 }}</p>
+              <div class="actions">
+                <a class="btn btn-light btn-sm" href="{{ report.detail_url }}">Открыть отчёт</a>
+                <a class="btn btn-light btn-sm" href="{{ report.photo_url }}" target="_blank" rel="noopener">Фото</a>
+                {% if report.submission_count > 1 %}<span class="muted">Отправок по плану: {{ report.submission_count }}</span>{% endif %}
+              </div>
+            </article>
+          {% empty %}<p class="muted">Отправленных отчётов пока нет.</p>{% endfor %}
+        </div>
+      </div>
+    </section>
   </div>
 
-  <div class="detail-cols site-reports">
-    <div class="card">
-      <h2>Отчёты <span class="badge">{{ report_total }}</span></h2>
-      {% if reports %}
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Дата</th><th>Работник</th><th>Описание</th><th>Состояние</th><th></th></tr></thead>
-            <tbody>
-            {% for r in reports %}
-              <tr>
-                <td class="nowrap">{{ r.created_at|date:"d.m.Y H:i" }}</td>
-                <td>{{ r.worker.name }}</td>
-                <td class="site-report-description"><details class="site-report-description-toggle"><summary><span>{{ r.description|default:"Описание отсутствует"|truncatechars:140 }}</span></summary><div class="site-report-description-full">{{ r.description|linebreaksbr }}</div></details>{% if r.submission_count > 1 %}<div class="muted">Отправок: {{ r.submission_count }} · фотографий: {{ r.photo_count }}</div>{% endif %}</td>
-                <td>{% if r.status %}<span class="status status-{{ r.status }}">{% if r.status == "approved" %}✓{% elif r.status == "revision" %}✕{% else %}!{% endif %} {{ r.status_label }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-                <td class="nowrap"><a class="btn btn-sm" href="{{ r.detail_url }}">Открыть</a></td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
+  <section class="card site-plan-history">
+    <header class="section-heading">
+      <div><div class="eyebrow">Работы на объекте</div><h2>Планы и история отправок</h2></div>
+      <span class="badge">{{ plans|length }} планов</span>
+    </header>
+    {% for plan in plans %}
+      <article class="site-plan-entry">
+        <header class="site-plan-header">
+          <div><h3>{{ plan.work_date|date:"d.m.Y" }} · {{ plan.worker.name }}</h3><div class="muted">План № {{ plan.pk }} · создан {{ plan.created_at|date:"d.m.Y H:i" }}{% if plan.created_by %} · автор: {{ plan.created_by }}{% endif %}</div></div>
+          <span class="status status-{{ plan.status }}">План: {{ plan.get_status_display }}</span>
+        </header>
+        <div class="site-plan-description"><h4>Задание</h4><p>{{ plan.description|linebreaksbr }}</p></div>
+        {% if plan.review_comment %}<p class="site-review-comment"><b>Комментарий проверки:</b> {{ plan.review_comment|linebreaksbr }}{% if plan.reviewed_at %}<span class="muted"> · {{ plan.reviewed_at|date:"d.m.Y H:i" }}</span>{% endif %}</p>{% endif %}
+        {% if plan.documents.all %}
+          <div class="site-plan-documents"><b>Документы плана:</b>
+            {% for doc in plan.documents.all %}<a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"plans/" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+          </div>
+        {% endif %}
+
+        <div class="site-submission-history">
+          <h4>История отправок <span class="badge">{{ plan.submission_history|length }}</span></h4>
+          {% for submission in plan.submission_history %}
+            <section class="site-submission-entry">
+              <header><div><b>Отчёт отправлен {{ submission.created_at|date:"d.m.Y H:i" }}</b><div class="muted">Отправка № {{ submission.pk }}</div></div><span class="status status-{{ submission.effective_status }}">{{ submission.effective_status_label }}</span></header>
+              {% if submission.review_comment %}<p class="site-review-comment"><b>Комментарий к отчёту:</b> {{ submission.review_comment|linebreaksbr }}</p>{% endif %}
+              <div class="site-submission-photos">
+                {% for photo in submission.photo_list %}
+                  <article class="site-submission-photo-card">
+                    <details class="site-photo-detail">
+                      <summary>
+                        <b>{{ photo.category.name|default:"Фото" }}</b>
+                        <span class="site-photo-preview">{{ photo.description|default:"Описание не добавлено."|truncatechars:110 }}</span>
+                      </summary>
+                      <div class="site-photo-full-description">{{ photo.description|default:"Описание не добавлено."|linebreaksbr }}</div>
+                    </details>
+                    <a class="btn btn-photo-link btn-sm" href="{{ photo.image.url }}" target="_blank" rel="noopener">Открыть фото</a>
+                  </article>
+                {% empty %}<p class="muted">К отправке не прикреплены фотографии.</p>{% endfor %}
+              </div>
+              <a class="btn btn-light btn-sm" href="{% url 'submission_detail' submission.pk %}">Открыть отправку</a>
+            </section>
+          {% empty %}<p class="muted">По этому плану отправок пока нет.</p>{% endfor %}
         </div>
-      {% else %}
-        <p class="muted">Отчётов по этому объекту пока нет.</p>
-      {% endif %}
-    </div>
-  </div>
+        <a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть план</a>
+      </article>
+    {% empty %}<p class="muted">Планы по объекту ещё не созданы.</p>{% endfor %}
+  </section>
+
+  <section class="card site-danger-zone">
+    <div><h2>Удаление объекта</h2><p class="muted">Действие затронет объект, его планы, отчёты и документы.</p></div>
+    <a class="btn btn-danger" href="{% url 'site_delete' object.pk %}">Удалить объект</a>
+  </section>
 {% endblock %}

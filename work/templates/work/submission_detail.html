@@ -2,8 +2,107 @@
 {% block title %}Отчёт · {{ object.plan.site.name }}{% endblock %}
 {% block heading %}Отчёт по объекту {{ object.plan.site.name }}{% endblock %}
 {% block content %}
-<div class="detail-head"><div class="muted">{{ object.created_at|date:"d.m.Y H:i" }} · {{ object.plan.site.address }} {% if submission_status %}<span class="status status-{{ submission_status }}">{% if submission_status == "approved" %}✓{% elif submission_status == "revision" %}✕{% else %}!{% endif %} {{ submission_status_label }}</span>{% else %}<span class="muted">{{ submission_status_label }}</span>{% endif %}</div><div class="actions"><a class="btn btn-light btn-sm" href="{% url 'report_list' %}">← Все отчёты</a><a class="btn btn-light btn-sm" href="{% url 'site_detail' object.plan.site.pk %}">К объекту</a></div></div>
-<div class="card"><dl class="kv"><dt>Работник</dt><dd>{{ object.plan.worker.name }}</dd><dt>Задание</dt><dd>{{ object.plan.description|linebreaksbr }}</dd><dt>Отправлено</dt><dd>{{ object.created_at|date:"d.m.Y H:i" }}</dd></dl></div>
-{% if object.review_comment %}<div class="alert history-review-comment"><b>Причина возврата на доработку:</b><p>{{ object.review_comment|linebreaksbr }}</p></div>{% endif %}
-<div class="reports">{% for photo in object.photos.all %}<article class="card report"><a href="{{ photo.image.url }}" target="_blank" rel="noopener"><img src="{{ photo.image.url }}" alt="Фото: {{ photo.category }}"></a><div class="body"><b>{{ photo.category }}</b><details class="photo-description"><summary><span class="description-label">Описание</span><span class="description-preview">{{ photo.description|truncatechars:80 }}</span></summary><div class="desc">{{ photo.description|linebreaksbr }}</div></details></div></article>{% endfor %}</div>
+<div class="detail-head">
+  <div class="muted">Отправлен {{ object.created_at|date:"d.m.Y H:i" }} · {{ object.plan.site.address }}
+    {% if submission_status %}<span class="status status-{{ submission_status }}">{% if submission_status == "approved" %}✓{% elif submission_status == "revision" %}✕{% else %}!{% endif %} {{ submission_status_label }}</span>{% else %}<span class="muted">{{ submission_status_label }}</span>{% endif %}
+  </div>
+  <div class="actions"><a class="btn btn-light btn-sm" href="{% url 'report_list' %}">← Все отчёты</a><a class="btn btn-light btn-sm" href="{% url 'site_detail' object.plan.site.pk %}">К объекту</a></div>
+</div>
+
+<section class="card submission-report-overview">
+  <h2>Информация об отчёте</h2>
+  <dl class="submission-report-meta">
+    <div><dt>Работник</dt><dd>{{ object.plan.worker.name }}</dd></div>
+    <div><dt>Объект</dt><dd>{{ object.plan.site.name }}</dd></div>
+    <div><dt>Номер объекта</dt><dd>{{ object.plan.site.object_number|default:"—" }}</dd></div>
+    <div><dt>Адрес</dt><dd>{{ object.plan.site.address|default:"—" }}</dd></div>
+    <div><dt>Дата выполнения по плану</dt><dd>{{ object.plan.work_date|date:"d.m.Y" }}</dd></div>
+    <div><dt>Отправлено</dt><dd>{{ object.created_at|date:"d.m.Y H:i" }}</dd></div>
+    <div><dt>Статус</dt><dd>{{ submission_status_label }}</dd></div>
+    <div class="submission-report-task"><dt>Задание работнику</dt><dd>{{ object.plan.description|linebreaksbr }}</dd></div>
+  </dl>
+
+  {% if object.review_comment %}
+    <div class="history-review-comment"><b>Ответ шефа:</b><p>{{ object.review_comment|linebreaksbr }}</p></div>
+  {% endif %}
+  {% if office_notes %}
+    <section class="submission-office-notes">
+      <h3>Дополнения от Office</h3>
+      {% for note in office_notes %}
+        <article class="history-review-comment"><b>Дополнение от Office · {{ note.created_at|date:"d.m.Y H:i" }}</b><p>{{ note.text|linebreaksbr }}</p></article>
+      {% endfor %}
+    </section>
+  {% endif %}
+  {% if object.status == "revision" %}
+    <details class="submission-office-note-form">
+      <summary class="btn btn-light">Добавить дополнение Office</summary>
+      <form method="post" class="review-form">{% csrf_token %}
+        <label for="office_note">Дополнение от Office</label>
+        <textarea id="office_note" name="office_note" rows="4" required placeholder="Добавьте уточнение отдельно от причины шефа"></textarea>
+        <button class="btn" type="submit" name="action" value="office_note">Сохранить дополнение</button>
+      </form>
+    </details>
+  {% endif %}
+
+  <section class="submission-required-photos">
+    <h3>Обязательные фото и результат работника</h3>
+    {% if report_photo_groups or additional_report_photos %}
+      <div class="submission-photo-grid">
+        {% for group in report_photo_groups %}
+          <article class="submission-photo-card">
+            <header><span class="submission-photo-icon" aria-hidden="true">📷</span><div><h4>{{ group.requirement.category.name }}</h4><span class="muted">Требуемое фото</span></div></header>
+            {% if group.photo %}
+              <a class="submission-photo-image" href="{{ group.photo.image.url }}" target="_blank" rel="noopener"><img src="{{ group.photo.image.url }}" alt="{{ group.requirement.category.name }} — фото работника"></a>
+              <div class="submission-photo-description"><b>Комментарий работника</b><p>{% if group.photo.description %}{{ group.photo.description|linebreaksbr }}{% else %}<span class="muted">Описание не добавлено.</span>{% endif %}</p></div>
+            {% else %}<div class="submission-photo-missing">Фото в этой отправке не приложено.</div>{% endif %}
+          </article>
+        {% endfor %}
+        {% for photo in additional_report_photos %}
+          <article class="submission-photo-card">
+            <header><span class="submission-photo-icon" aria-hidden="true">📷</span><div><h4>{{ photo.category.name|default:"Дополнительное фото" }}</h4><span class="muted">Фото из отправки</span></div></header>
+            <a class="submission-photo-image" href="{{ photo.image.url }}" target="_blank" rel="noopener"><img src="{{ photo.image.url }}" alt="{{ photo.category }} — фото работника"></a>
+            <div class="submission-photo-description"><b>Комментарий работника</b><p>{% if photo.description %}{{ photo.description|linebreaksbr }}{% else %}<span class="muted">Описание не добавлено.</span>{% endif %}</p></div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}<p class="muted">Для объекта не настроены обязательные фотографии, в этой отправке фото нет.</p>{% endif %}
+  </section>
+</section>
+
+{% if is_latest_submission and object.plan.status == "submitted" %}
+  <section class="card submission-review-panel">
+    <h2>Рассмотрение отчёта</h2>
+    <div class="actions">
+      <form method="post">{% csrf_token %}<button class="btn" type="submit" name="action" value="approve">✓ Одобрить отчёт</button></form>
+      <details class="submission-rejection">
+        <summary class="btn btn-danger">Отклонить отчёт</summary>
+        <form method="post" class="review-form">{% csrf_token %}
+          <label for="review_comment">Причина отклонения</label>
+          <textarea id="review_comment" name="review_comment" rows="4" required placeholder="Напишите, что нужно исправить"></textarea>
+          <button class="btn btn-danger" type="submit" name="action" value="revision">Отправить на доработку</button>
+        </form>
+      </details>
+    </div>
+  </section>
+{% elif is_latest_submission and object.plan.status == "approved" %}
+  <form method="post" class="card submission-review-panel">{% csrf_token %}<h2>Рассмотрение отчёта</h2><p>Если отчёт приняли по ошибке, его можно снова отправить на проверку.</p><button class="btn btn-light" type="submit" name="action" value="reopen">Вернуть на проверку</button></form>
+{% endif %}
+
+<section class="card submission-conversation">
+  <h2>История отправок и переписка</h2>
+  {% for attempt in submission_history %}
+    <article class="submission-conversation-entry">
+      <header><b>Отправка {{ forloop.counter }} · {{ attempt.created_at|date:"d.m.Y H:i" }}</b>
+        {% if attempt.status == "submitted" and attempt.pk != latest_submission_id %}<span class="status status-planned">Заменён новой версией</span>
+        {% elif attempt.status %}<span class="status status-{{ attempt.status }}">{{ attempt.get_status_display }}</span>{% endif %}
+      </header>
+      {% if attempt.review_comment %}<div class="history-review-comment"><b>Комментарий шефа:</b><p>{{ attempt.review_comment|linebreaksbr }}</p></div>
+      {% elif attempt.status == "approved" %}<p class="muted">Отчёт принят.</p>
+      {% elif attempt.status == "submitted" and attempt.pk == latest_submission_id %}<p class="muted">Ожидает рассмотрения.</p>
+      {% elif attempt.status == "submitted" %}<p class="muted">Для плана отправлена более новая версия.</p>{% endif %}
+      {% for note in attempt.office_notes.all %}<div class="history-review-comment"><b>Дополнение от Office · {{ note.created_at|date:"d.m.Y H:i" }}</b><p>{{ note.text|linebreaksbr }}</p></div>{% endfor %}
+      {% if attempt.pk != object.pk %}<a class="btn btn-light btn-sm" href="{% url 'submission_detail' attempt.pk %}">Открыть эту отправку</a>{% endif %}
+    </article>
+  {% empty %}<p class="muted">История отправок отсутствует.</p>{% endfor %}
+</section>
 {% endblock %}

@@ -22,8 +22,7 @@
             <td>{{ worker.phone }}</td>
             <td class="nowrap">
                 <div class="actions">
-                    <a class="btn btn-light btn-sm" href="{% url 'worker_edit' worker.pk %}">Изменить</a>
-                    <a class="btn btn-danger btn-sm" href="{% url 'worker_delete' worker.pk %}">Удалить</a>
+                    <a class="btn btn-sm" href="{% url 'worker_detail' worker.pk %}">Открыть</a>
                 </div>
             </td>
         </tr>

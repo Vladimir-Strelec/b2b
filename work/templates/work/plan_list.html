@@ -17,7 +17,6 @@
     </div>
     <div><label for="site_type">Тип объекта</label><select id="site_type" name="site_type"><option value="">Все</option>{% for value,label in site_types %}<option value="{{ value }}" {% if request.GET.site_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
     <div><label for="status">Статус</label><select id="status" name="status"><option value="">Все</option>{% for value,label in statuses %}<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-    <button class="btn" type="submit">Фильтровать</button>
     <a class="btn btn-light" href="{% url 'plan_list' %}">Сбросить</a>
     {% if history_mode %}<a class="btn btn-light" href="{% url 'plan_list' %}">К сегодняшним планам</a>{% else %}<a class="btn btn-light" href="?history=1">Вся история</a>{% endif %}
   </form>

@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "django_filters",
+    "storages",
     'work',
 ]
 
@@ -117,6 +118,21 @@ STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
 }
+
+# Heroku dynos use an ephemeral filesystem. Keep media in an S3-compatible
+# bucket whenever one is configured.
+if os.environ.get("AWS_STORAGE_BUCKET_NAME"):
+    STORAGES["default"] = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": os.environ["AWS_STORAGE_BUCKET_NAME"],
+            "region_name": os.environ.get("AWS_S3_REGION_NAME") or None,
+            "endpoint_url": os.environ.get("AWS_S3_ENDPOINT_URL") or None,
+            "custom_domain": os.environ.get("AWS_S3_CUSTOM_DOMAIN") or None,
+            "querystring_auth": True,
+            "file_overwrite": False,
+        },
+    }
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = True

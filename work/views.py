@@ -32,7 +32,7 @@ from .forms import (
 )
 from .models import (
     Report, Site, SiteDocument, SitePhotoRequirement, Worker, WorkPlan,
-    WorkPhoto, WorkShift, WorkSubmission,
+    WorkPhoto, WorkShift, WorkSubmission, WorkSubmissionOfficeNote,
 )
 
 
@@ -93,11 +93,23 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             today = timezone.localdate()
             day_start, day_end = _day_bounds(today)
             month_start = _month_start(today)
+            selected_from = parse_date(self.request.GET.get("date_from", ""))
+            selected_to = parse_date(self.request.GET.get("date_to", ""))
+            if selected_from is None and selected_to is None:
+                selected_from = selected_to = today
+            elif selected_from is None:
+                selected_from = selected_to
+            elif selected_to is None:
+                selected_to = selected_from
+            if selected_from > selected_to:
+                selected_from, selected_to = selected_to, selected_from
+            selected_day_start, _ = _day_bounds(selected_from)
+            _, selected_day_end = _day_bounds(selected_to)
             shift_map = {}
             for shift in WorkShift.objects.filter(
                 started_at__lt=now,
             ).filter(
-                Q(ended_at__gt=month_start) | Q(ended_at__isnull=True)
+                Q(ended_at__gt=min(month_start, selected_day_start)) | Q(ended_at__isnull=True)
             ).select_related("worker").order_by("started_at"):
                 shift_map.setdefault(shift.worker_id, []).append(shift)
             worker_rows = []
@@ -106,14 +118,23 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 current_shift = next((shift for shift in reversed(shifts) if shift.ended_at is None), None)
                 today_seconds = _shift_seconds(shifts, day_start, min(day_end, now))
                 month_seconds = _shift_seconds(shifts, month_start, now)
+                selected_period_shifts = [
+                    shift for shift in shifts
+                    if shift.started_at < selected_day_end
+                    and (shift.ended_at is None or shift.ended_at > selected_day_start)
+                ]
                 worker_rows.append({
                     "worker": worker,
                     "current_shift": current_shift,
                     "over_eight_hours": bool(current_shift and now - current_shift.started_at >= timedelta(hours=8)),
                     "today_hours": _format_hours(today_seconds),
                     "month_hours": _format_hours(month_seconds),
+                    "selected_period_shifts": selected_period_shifts,
                 })
             ctx["worker_time_rows"] = worker_rows
+            ctx["date_from"] = selected_from.isoformat()
+            ctx["date_to"] = selected_to.isoformat() if selected_to != selected_from else ""
+            ctx["show_shift_dates"] = selected_from != selected_to
         elif hasattr(self.request.user, "worker"):
             worker = self.request.user.worker
             now = timezone.now()
@@ -227,19 +248,23 @@ class WorkPlanListView(StaffRequiredMixin, ListView):
             ctx["today_plans"] = plans.filter(work_date=today)
             upcoming = plans.filter(
                 work_date__gt=today,
-                status=WorkPlan.Status.PLANNED,
-            ).order_by("work_date", "status_order", "site__name", "pk")
+            ).exclude(status=WorkPlan.Status.APPROVED).order_by(
+                "work_date", "status_order", "site__name", "pk"
+            )
             ctx["upcoming_count"] = upcoming.count()
             completed = plans.filter(
                 work_date__lt=today,
-                status=WorkPlan.Status.APPROVED,
             ).order_by("-work_date", "site__name", "pk")
             ctx["upcoming_groups"] = [
                 (day, list(items)) for day, items in groupby(upcoming, key=lambda plan: plan.work_date)
             ]
-            ctx["completed_groups"] = [
-                (day, list(items)) for day, items in groupby(completed, key=lambda plan: plan.work_date)
-            ]
+            ctx["completed_groups"] = []
+            for day, items in groupby(completed, key=lambda plan: plan.work_date):
+                day_plans = list(items)
+                unfinished_count = sum(
+                    plan.status != WorkPlan.Status.APPROVED for plan in day_plans
+                )
+                ctx["completed_groups"].append((day, day_plans, unfinished_count))
         query = self.request.GET.copy()
         query.pop("page", None)
         ctx["query_string"] = query.urlencode()
@@ -265,7 +290,6 @@ class WorkPlanCreateView(StaffRequiredMixin, CreateView):
         self.object = form.save(commit=False)
         self.object.created_by = self.request.user
         self.object.save()
-        Site.objects.filter(pk=self.object.site_id).update(is_completed=False)
         messages.success(self.request, "План работы создан и назначен работнику.")
         return redirect("plan_detail", pk=self.object.pk)
 
@@ -291,7 +315,6 @@ class WorkPlanUpdateView(StaffRequiredMixin, UpdateView):
         self.object.review_comment = ""
         self.object.reviewed_at = None
         self.object.save(update_fields=["status", "review_comment", "reviewed_at"])
-        Site.objects.filter(pk=self.object.site_id).update(is_completed=False)
         messages.success(self.request, "План работы обновлён.")
         return redirect("plan_detail", pk=self.object.pk)
 
@@ -327,7 +350,29 @@ def validate_pdf_documents(files, remaining, owner_label):
     return ""
 
 
-def work_photo_formset_for(plan, submission, data=None, files=None):
+def validate_site_documents(files, remaining, required=False):
+    if required and not files:
+        return "При создании объекта прикрепите хотя бы один файл PDF или Excel."
+    if len(files) > remaining:
+        return f"К объекту можно прикрепить не более 20 файлов; свободно мест: {remaining}."
+    signatures = {
+        ".pdf": (b"%PDF-", "PDF"),
+        ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "Excel"),
+        ".xlsx": (b"PK\x03\x04", "Excel"),
+    }
+    for uploaded in files:
+        extension = "." + uploaded.name.rsplit(".", 1)[-1].lower() if "." in uploaded.name else ""
+        signature = signatures.get(extension)
+        if not signature:
+            return f"Файл «{uploaded.name}» должен быть формата PDF, XLS или XLSX."
+        expected, file_type = signature
+        if uploaded.read(len(expected)) != expected:
+            return f"Файл «{uploaded.name}» не распознан как {file_type}."
+        uploaded.seek(0)
+    return ""
+
+
+def work_photo_formset_for(plan, submission, data=None, files=None, initial=None):
     slots = list(plan.site.photo_requirements.select_related("category"))
     if not slots:
         return None
@@ -338,7 +383,10 @@ def work_photo_formset_for(plan, submission, data=None, files=None):
         formset=RequiredSlotInlineFormSet,
         extra=len(slots),
         min_num=len(slots),
-        validate_min=True,
+        # RequiredSlotInlineFormSet validates every required slot itself. The
+        # default min validator counts only changed extras and rejects a valid
+        # correction that reuses unchanged photos from the previous attempt.
+        validate_min=False,
         max_num=len(slots),
         validate_max=True,
         can_delete=False,
@@ -347,9 +395,33 @@ def work_photo_formset_for(plan, submission, data=None, files=None):
         data=data,
         files=files,
         instance=submission,
+        initial=initial,
         prefix="photos",
         slots=slots,
     )
+
+
+def resubmission_photo_initial(plan, previous_submission):
+    """Carry forward the last attempt's photos as editable defaults."""
+    if previous_submission is None:
+        return None
+    slots = list(plan.site.photo_requirements.select_related("category"))
+    photos = list(previous_submission.photos.select_related("category", "photo_slot__category"))
+    used_photo_ids = set()
+    initial = []
+    for slot in slots:
+        photo = next((item for item in photos if item.photo_slot_id == slot.pk), None)
+        if photo is None:
+            photo = next(
+                (item for item in photos if item.pk not in used_photo_ids and item.category_id == slot.category_id),
+                None,
+            )
+        row = {"photo_slot": slot.pk}
+        if photo:
+            used_photo_ids.add(photo.pk)
+            row.update(image=photo.image, description=photo.description)
+        initial.append(row)
+    return initial
 
 
 class SiteFormProcessMixin:
@@ -380,7 +452,11 @@ class SiteFormProcessMixin:
         self.photo_requirement_formset = self.get_photo_requirement_formset(
             instance=form.instance, data=self.request.POST,
         )
-        error = validate_pdf_documents(uploaded_files, 20 - current_count, "объекту")
+        error = validate_site_documents(
+            uploaded_files,
+            20 - current_count,
+            required=not (self.object and self.object.pk) and current_count == 0,
+        )
         if error:
             form.add_error(None, error)
             return self.form_invalid(form)
@@ -423,12 +499,16 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["photo_formset_invalid"] = kwargs.get("photo_formset_invalid", False)
+        ctx["future_locked"] = (
+            not self.request.user.is_staff
+            and self.object.work_date > timezone.localdate()
+        )
         ctx["photo_slots"] = list(
             self.object.site.photo_requirements.select_related("category")
         )
         if self.request.user.is_staff:
             ctx["current_submission"] = WorkSubmission.objects.filter(
-                plan__site_id=self.object.site_id
+                plan_id=self.object.pk
             ).select_related("plan__site", "plan__worker").order_by(
                 "-created_at", "-pk"
             ).first()
@@ -449,52 +529,40 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
         ).prefetch_related(
             "photos__category"
         ).order_by("-created_at", "-pk")
-        if not self.request.user.is_staff and self.object.status != WorkPlan.Status.APPROVED:
-            submission = ctx["current_submission"] or WorkSubmission(plan=self.object)
+        if (
+            not self.request.user.is_staff
+            and not ctx["future_locked"]
+            and self.object.status != WorkPlan.Status.APPROVED
+        ):
+            ctx["resubmission_mode"] = (
+                self.object.status in (WorkPlan.Status.REVISION, WorkPlan.Status.SUBMITTED)
+                and ctx["current_submission"] is not None
+            )
+            if ctx["resubmission_mode"]:
+                submission = WorkSubmission(plan=self.object)
+                initial = resubmission_photo_initial(self.object, ctx["current_submission"])
+            else:
+                submission = ctx["current_submission"] or WorkSubmission(plan=self.object)
+                initial = None
             ctx["photo_formset"] = kwargs.get("photo_formset") or work_photo_formset_for(
-                self.object, submission,
+                self.object, submission, initial=initial,
             )
         return ctx
 
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
         if request.user.is_staff:
-            action = request.POST.get("action")
-            latest_submission = WorkSubmission.objects.filter(
-                plan__site_id=self.object.site_id
-            ).select_related("plan").order_by("-created_at", "-pk").first()
-            review_plan = latest_submission.plan if latest_submission else self.object
-            if action == "reopen" and review_plan.status == WorkPlan.Status.APPROVED:
-                review_plan.status = WorkPlan.Status.SUBMITTED
-                review_plan.review_comment = ""
-                review_plan.reviewed_at = None
-                review_plan.save(update_fields=["status", "review_comment", "reviewed_at"])
-                self._set_submission_status(latest_submission, WorkPlan.Status.SUBMITTED)
-                messages.success(request, "Работа снова отправлена на проверку.")
-            elif review_plan.status != WorkPlan.Status.SUBMITTED:
-                messages.error(request, "Проверить можно только отправленный на проверку план.")
-            elif action == "approve":
-                review_plan.status = WorkPlan.Status.APPROVED
-                review_plan.review_comment = ""
-                review_plan.reviewed_at = timezone.now()
-                review_plan.save(update_fields=["status", "review_comment", "reviewed_at"])
-                self._set_submission_status(latest_submission, WorkPlan.Status.APPROVED)
-                messages.success(request, "Работа принята.")
-            elif action == "revision":
-                comment = request.POST.get("review_comment", "").strip()
-                if not comment:
-                    messages.error(request, "Напишите, что нужно исправить.")
-                else:
-                    review_plan.status = WorkPlan.Status.REVISION
-                    review_plan.review_comment = comment
-                    review_plan.reviewed_at = timezone.now()
-                    review_plan.save(update_fields=["status", "review_comment", "reviewed_at"])
-                    self._set_submission_status(latest_submission, WorkPlan.Status.REVISION, comment)
-                    messages.success(request, "Работа возвращена на доработку.")
+            messages.info(request, "Рассмотрение отчётов находится в разделе «Отчёты».")
             return redirect("plan_detail", pk=self.object.pk)
 
         if self.object.worker.user_id != request.user.id:
             return HttpResponseForbidden()
+        if self.object.work_date > timezone.localdate():
+            messages.error(
+                request,
+                f"Это задание можно выполнить не раньше {self.object.work_date:%d.%m.%Y}.",
+            )
+            return redirect("plan_detail", pk=self.object.pk)
         if self.object.status not in (
             WorkPlan.Status.PLANNED,
             WorkPlan.Status.SUBMITTED,
@@ -502,12 +570,22 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
         ):
             messages.error(request, "Это задание уже принято и его нельзя изменить.")
             return redirect("plan_detail", pk=self.object.pk)
-        submission = self.object.submissions.order_by("-created_at", "-pk").first()
-        is_editing_submission = submission is not None
+        previous_submission = self.object.submissions.order_by("-created_at", "-pk").first()
+        is_resubmission = (
+            previous_submission is not None
+            and self.object.status in (WorkPlan.Status.REVISION, WorkPlan.Status.SUBMITTED)
+        )
+        if is_resubmission:
+            submission = WorkSubmission(plan=self.object)
+            initial = resubmission_photo_initial(self.object, previous_submission)
+        else:
+            submission = previous_submission
+            initial = None
+        is_editing_submission = submission is not None and submission.pk is not None
         if submission is None:
             submission = WorkSubmission(plan=self.object)
         formset = work_photo_formset_for(
-            self.object, submission, data=request.POST, files=request.FILES,
+            self.object, submission, data=request.POST, files=request.FILES, initial=initial,
         )
         if formset and formset.is_valid():
             # A first-time submission is unsaved, so its reverse manager cannot
@@ -538,7 +616,9 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
                 old_name = previous_files.get(photo.pk)
                 if old_name and old_name != photo.image.name:
                     default_storage.delete(old_name)
-            if is_editing_submission:
+            if is_resubmission:
+                messages.success(request, "Новая версия отчёта отправлена. Предыдущая версия и ответы шефа сохранены в истории.")
+            elif is_editing_submission:
                 messages.success(request, "Отчёт обновлён и отправлен хозяину на проверку.")
             else:
                 messages.success(request, "Отчёт отправлен. Ожидайте одобрения хозяина.")
@@ -551,16 +631,6 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
                 photo_formset=formset, photo_formset_invalid=True,
             ))
         return self.render_to_response(self.get_context_data(photo_formset=formset))
-
-    def _set_submission_status(self, submission, status, review_comment=None):
-        if submission:
-            submission.status = status
-            update_fields = ["status"]
-            if review_comment is not None:
-                submission.review_comment = review_comment
-                update_fields.append("review_comment")
-            submission.save(update_fields=update_fields)
-
 
 class WorkerPlanListView(LoginRequiredMixin, TemplateView):
     template_name = "work/worker_plans.html"
@@ -639,8 +709,21 @@ class SiteListView(StaffRequiredMixin, FilterView):
             )
         ).order_by("-latest_activity", "-work_date", "-created_at", "-pk")
         queryset = super().get_queryset().annotate(
+            work_plan_count=Count("work_plans", distinct=True),
             legacy_report_count=Count("reports", distinct=True),
             submission_count=Count("work_plans__submissions", distinct=True),
+            planned_plan_count=Count(
+                "work_plans", filter=Q(work_plans__status=WorkPlan.Status.PLANNED), distinct=True,
+            ),
+            submitted_plan_count=Count(
+                "work_plans", filter=Q(work_plans__status=WorkPlan.Status.SUBMITTED), distinct=True,
+            ),
+            revision_plan_count=Count(
+                "work_plans", filter=Q(work_plans__status=WorkPlan.Status.REVISION), distinct=True,
+            ),
+            approved_plan_count=Count(
+                "work_plans", filter=Q(work_plans__status=WorkPlan.Status.APPROVED), distinct=True,
+            ),
             latest_plan_status=Subquery(latest_plan.values("status")[:1]),
             latest_plan_date=Subquery(latest_plan.values("work_date")[:1]),
         ).annotate(
@@ -652,9 +735,7 @@ class SiteListView(StaffRequiredMixin, FilterView):
                 default=Value(4),
                 output_field=IntegerField(),
             ),
-        ).order_by("state_order", "name", "pk")
-        if not self.completed_only:
-            queryset = queryset.filter(is_completed=False)
+        ).order_by("is_completed", "state_order", "name", "pk")
         return queryset
 
 
@@ -705,7 +786,25 @@ class SiteDetailView(StaffRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        plans = self.object.work_plans.all()
+        plans = self.object.work_plans.select_related("worker", "created_by").prefetch_related(
+            "documents", "submissions__photos__category"
+        ).order_by("-work_date", "worker__name", "pk")
+        ctx["plans"] = plans
+        for plan in plans:
+            plan.submission_history = list(plan.submissions.all())
+            for submission in plan.submission_history:
+                submission.effective_status = submission.status or plan.status
+                submission.effective_status_label = dict(WorkPlan.Status.choices).get(
+                    submission.effective_status, "Статус не сохранён"
+                )
+                submission.photo_list = list(submission.photos.all())
+        ctx["site_workers"] = Worker.objects.filter(
+            Q(sites=self.object) | Q(work_plans__site=self.object)
+        ).annotate(
+            site_plan_count=Count(
+                "work_plans", filter=Q(work_plans__site=self.object), distinct=True,
+            )
+        ).distinct().select_related("user").order_by("name", "pk")
         ctx["can_complete"] = (
             plans.exists() and not plans.exclude(status=WorkPlan.Status.APPROVED).exists()
         )
@@ -741,6 +840,7 @@ class SiteDetailView(StaffRequiredMixin, DetailView):
         entries = [_legacy_report_entry(report) for report in old_reports]
         entries.extend(_submission_report_entries(submissions))
         ctx["reports"] = sorted(entries, key=lambda report: report.created_at, reverse=True)
+        ctx["legacy_reports"] = [report for report in ctx["reports"] if report.status is None]
         ctx["report_total"] = sum(report.submission_count for report in entries)
         return ctx
 
@@ -767,7 +867,7 @@ class SiteDeleteView(StaffRequiredMixin, DeleteView):
     success_url = reverse_lazy("site_list")
     extra_context = {
         "back": "site_list",
-        "warning": "Вместе с объектом удалятся все его отчёты.",
+        "warning": "Вместе с объектом удалятся его планы, отправленные отчёты и документы.",
     }
 
 
@@ -803,6 +903,17 @@ class WorkerDetailView(StaffRequiredMixin, DetailView):
         except (TypeError, ValueError):
             month = today.month
 
+        date_from_value = parse_date(self.request.GET.get("date_from", ""))
+        date_to_value = parse_date(self.request.GET.get("date_to", ""))
+        selected_shift_range = date_from_value is not None or date_to_value is not None
+        if selected_shift_range:
+            date_from = date_from_value or date_to_value
+            date_to = date_to_value or date_from_value
+            if date_from > date_to:
+                date_from, date_to = date_to, date_from
+            range_start, _ = _day_bounds(date_from)
+            _, range_end = _day_bounds(date_to)
+
         month_start = timezone.make_aware(datetime(year, month, 1))
         next_month = date(year + (month == 12), month % 12 + 1, 1)
         month_end = timezone.make_aware(datetime.combine(next_month, time.min))
@@ -823,9 +934,17 @@ class WorkerDetailView(StaffRequiredMixin, DetailView):
         year_seconds = _shift_seconds(year_shifts, year_start, min(next_year, now))
 
         shift_rows = []
-        for shift in month_shifts.order_by("-started_at"):
-            end = min(shift.ended_at or now, month_end)
-            start = max(shift.started_at, month_start)
+        if selected_shift_range:
+            shifts_for_table = all_shifts.filter(
+                started_at__lt=range_end,
+            ).filter(Q(ended_at__gt=range_start) | Q(ended_at__isnull=True))
+            row_start, row_end = range_start, range_end
+        else:
+            shifts_for_table = month_shifts
+            row_start, row_end = month_start, month_end
+        for shift in shifts_for_table.order_by("-started_at"):
+            end = min(shift.ended_at or now, row_end, now)
+            start = max(shift.started_at, row_start)
             shift_rows.append({
                 "shift": shift,
                 "duration": _format_hours(int(max(0, (end - start).total_seconds()))),
@@ -842,6 +961,9 @@ class WorkerDetailView(StaffRequiredMixin, DetailView):
             "selected_month_label": dict(month_options)[month],
             "year_options": range(min(year, today.year) - 4, max(year, today.year) + 1),
             "month_options": month_options,
+            "date_from": date_from.isoformat() if selected_shift_range else "",
+            "date_to": date_to.isoformat() if selected_shift_range else "",
+            "selected_shift_range": selected_shift_range,
             "today_hours": _format_hours(today_seconds),
             "month_hours": _format_hours(month_seconds),
             "year_hours": _format_hours(year_seconds),
@@ -877,7 +999,7 @@ class WorkerDeleteView(StaffRequiredMixin, DeleteView):
     success_url = reverse_lazy("worker_list")
     extra_context = {
         "back": "worker_list",
-        "warning": "Вместе с работником удалятся его отчёты и учётная запись для входа.",
+        "warning": "Вместе с работником удалятся его планы, смены, отчёты и учётная запись для входа.",
     }
 
     def form_valid(self, form):
@@ -986,15 +1108,117 @@ class WorkSubmissionDetailView(StaffRequiredMixin, DetailView):
     template_name = "work/submission_detail.html"
 
     def get_queryset(self):
-        return WorkSubmission.objects.select_related("plan__site", "plan__worker").prefetch_related("photos__category")
+        return WorkSubmission.objects.select_related("plan__site", "plan__worker").prefetch_related(
+            "photos__category", "office_notes",
+        )
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["submission_status"] = self.object.status
-        ctx["submission_status_label"] = dict(WorkPlan.Status.choices).get(
-            self.object.status, "Статус не сохранён"
-        )
+        ctx["submission_status"] = self.object.status or self.object.plan.status
+        ctx["latest_submission_id"] = WorkSubmission.objects.filter(
+            plan_id=self.object.plan_id
+        ).order_by("-created_at", "-pk").values_list("pk", flat=True).first()
+        ctx["is_latest_submission"] = ctx["latest_submission_id"] == self.object.pk
+        if not ctx["is_latest_submission"] and self.object.status == WorkPlan.Status.SUBMITTED:
+            ctx["submission_status_label"] = "Заменён новой версией"
+        else:
+            ctx["submission_status_label"] = dict(WorkPlan.Status.choices).get(
+                ctx["submission_status"], "Статус не сохранён"
+            )
+        ctx["office_notes"] = self.object.office_notes.all()
+        ctx["submission_history"] = WorkSubmission.objects.filter(
+            plan_id=self.object.plan_id
+        ).select_related("plan__worker").prefetch_related(
+            "photos__category", "office_notes",
+        ).order_by("created_at", "pk")
+        photos = list(self.object.photos.select_related("category", "photo_slot__category"))
+        requirements = list(self.object.plan.site.photo_requirements.select_related("category"))
+        grouped_photos = []
+        used_photo_ids = set()
+        for requirement in requirements:
+            attached = next(
+                (photo for photo in photos if photo.photo_slot_id == requirement.pk),
+                None,
+            )
+            if attached is None:
+                attached = next(
+                    (
+                        photo for photo in photos
+                        if photo.pk not in used_photo_ids
+                        and photo.category_id == requirement.category_id
+                    ),
+                    None,
+                )
+            if attached:
+                used_photo_ids.add(attached.pk)
+            grouped_photos.append({"requirement": requirement, "photo": attached})
+        ctx["report_photo_groups"] = grouped_photos
+        ctx["additional_report_photos"] = [
+            photo for photo in photos if photo.pk not in used_photo_ids
+        ]
         return ctx
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        action = request.POST.get("action")
+        comment = request.POST.get("review_comment", "").strip()
+        office_note = request.POST.get("office_note", "").strip()
+        now = timezone.now()
+
+        if action == "office_note":
+            if self.object.status != WorkPlan.Status.REVISION:
+                messages.error(request, "Дополнение Office можно добавить к отклонённому отчёту.")
+            elif not office_note:
+                messages.error(request, "Введите текст дополнения Office.")
+            else:
+                WorkSubmissionOfficeNote.objects.create(
+                    submission=self.object, text=office_note,
+                )
+                messages.success(request, "Дополнение Office добавлено.")
+            return redirect("submission_detail", pk=self.object.pk)
+
+        with transaction.atomic():
+            plan = WorkPlan.objects.select_for_update().get(pk=self.object.plan_id)
+            latest_submission = WorkSubmission.objects.filter(
+                plan_id=plan.pk
+            ).order_by("-created_at", "-pk").first()
+
+            if latest_submission is None or latest_submission.pk != self.object.pk:
+                messages.error(request, "Рассматривать можно только последнюю отправку. Откройте актуальный отчёт.")
+            elif action == "approve" and plan.status == WorkPlan.Status.SUBMITTED:
+                plan.status = WorkPlan.Status.APPROVED
+                plan.review_comment = ""
+                plan.reviewed_at = now
+                plan.save(update_fields=["status", "review_comment", "reviewed_at"])
+                latest_submission.status = WorkPlan.Status.APPROVED
+                latest_submission.review_comment = ""
+                latest_submission.save(update_fields=["status", "review_comment"])
+                messages.success(request, "Отчёт одобрен.")
+            elif action == "revision" and plan.status == WorkPlan.Status.SUBMITTED:
+                if not comment:
+                    messages.error(request, "Добавьте текст с причиной отклонения отчёта.")
+                else:
+                    plan.status = WorkPlan.Status.REVISION
+                    plan.review_comment = comment
+                    plan.reviewed_at = now
+                    plan.save(update_fields=["status", "review_comment", "reviewed_at"])
+                    latest_submission.status = WorkPlan.Status.REVISION
+                    latest_submission.review_comment = comment
+                    latest_submission.save(update_fields=["status", "review_comment"])
+                    messages.success(request, "Отчёт отклонён и отправлен на доработку.")
+            elif action == "reopen" and plan.status == WorkPlan.Status.APPROVED:
+                plan.status = WorkPlan.Status.SUBMITTED
+                plan.review_comment = ""
+                plan.reviewed_at = None
+                plan.save(update_fields=["status", "review_comment", "reviewed_at"])
+                latest_submission.status = WorkPlan.Status.SUBMITTED
+                latest_submission.review_comment = ""
+                latest_submission.save(update_fields=["status", "review_comment"])
+                messages.success(request, "Отчёт снова ожидает рассмотрения.")
+            else:
+                messages.error(request, "Это действие недоступно для текущего статуса отчёта.")
+
+        return redirect("submission_detail", pk=self.object.pk)
 
 
 def _legacy_report_entry(report):

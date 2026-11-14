@@ -35,25 +35,26 @@
 
   {% if user.is_staff %}<p class="task-worker"><b>Работник:</b> {{ display_plan.worker.name }}</p>{% endif %}
 
-  {% if display_plan.status == "revision" %}<div class="alert"><b>Нужно исправить:</b> {{ display_plan.review_comment|linebreaksbr }}</div>{% endif %}
+  {% if display_plan.status == "revision" %}<div class="alert"><b>Нужно исправить:</b> {{ display_plan.review_comment|linebreaksbr }}<p>После отправки исправлений предыдущая версия и замечание шефа останутся в истории.</p></div>{% endif %}
 
   {% if user.is_staff %}
     <div class="task-actions">
-      {% if display_plan.status == "planned" %}<div class="actions"><a class="btn btn-light btn-sm" href="{% url 'plan_edit' display_plan.pk %}">Редактировать план</a><a class="btn btn-danger btn-sm" href="{% url 'plan_delete' display_plan.pk %}">Удалить план</a></div>{% endif %}
-      {% if display_plan.status == "submitted" %}
-        <form method="post" class="review-form">{% csrf_token %}<label for="review_comment">Комментарий, если нужно переделать</label><textarea id="review_comment" name="review_comment" rows="3"></textarea><div class="actions"><button class="btn" name="action" value="approve">✓ Принять работу</button><button class="btn btn-danger" name="action" value="revision">Вернуть на доработку</button></div></form>
-      {% elif display_plan.status == "approved" %}
-        <form method="post" class="review-form">{% csrf_token %}<p>Если работу приняли по ошибке, её можно снова отправить на проверку.</p><button class="btn btn-light" name="action" value="reopen">Вернуть на проверку</button></form>
+      {% if display_plan.status != "approved" %}<div class="actions"><a class="btn btn-light btn-sm" href="{% url 'plan_edit' display_plan.pk %}">Изменить план и дату</a>{% if display_plan.status == "planned" %}<a class="btn btn-danger btn-sm" href="{% url 'plan_delete' display_plan.pk %}">Удалить план</a>{% endif %}</div>{% endif %}
+      {% if current_submission %}
+        <a class="btn btn-sm" href="{% url 'submission_detail' current_submission.pk %}">Открыть отчёт{% if display_plan.status == "submitted" %} для рассмотрения{% endif %}</a>
       {% endif %}
     </div>
-  {% elif display_plan.status == "submitted" %}
-    <div class="alert alert-success task-notice">Отчёт уже на проверке. Если заметили ошибку, исправьте его здесь — обновлённая отправка заменит текущую.</div>
+  {% elif display_plan.status == "submitted" and not future_locked %}
+    <div class="alert alert-success task-notice">Отчёт уже на проверке. Если нашли ошибку, отправьте новую версию — предыдущая останется в истории.</div>
   {% endif %}
 
   {% if not user.is_staff and object.status != "approved" %}
+    {% if future_locked %}
+      <div class="alert future-plan-notice"><b>Выполнение ещё закрыто.</b> Этот план назначен на {{ object.work_date|date:"d.m.Y" }}. Вы можете заранее посмотреть задание, но отправить отчёт получится в назначенный день. Хозяин может изменить дату плана.</div>
+    {% else %}
     <section class="task-result">
       <div class="task-section-heading">
-        <div><div class="task-eyebrow">Следующий шаг</div><h3>{% if current_submission %}Редактировать отправленный отчёт{% else %}Добавить результат работы{% endif %}</h3></div>
+        <div><div class="task-eyebrow">Следующий шаг</div><h3>{% if resubmission_mode %}Исправить отчёт и отправить заново{% elif current_submission %}Редактировать отправленный отчёт{% else %}Добавить результат работы{% endif %}</h3></div>
         {% if photo_slots %}<span class="badge">{{ photo_slots|length }} фото</span>{% endif %}
       </div>
       {% if photo_formset %}
@@ -69,10 +70,10 @@
                 <div class="photo-upload-area">
                   {{ photo_form.image }}{{ photo_form.image.errors }}
                   <label class="photo-upload-control" for="{{ photo_form.image.id_for_label }}">
-                    <img class="photo-upload-preview" alt="Предпросмотр выбранной фотографии" hidden>
+                    <img class="photo-upload-preview" alt="Предпросмотр фотографии" {% if photo_form.image.value %}src="{{ photo_form.image.value.url }}"{% else %}hidden{% endif %}>
                     <svg class="photo-camera-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.6 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.6L17 3H9Zm3 14.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm0-2a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/></svg>
-                    <span class="photo-upload-title">{% if photo_form.instance.pk %}Заменить фотографию{% else %}Добавить фотографию{% endif %}</span>
-                    <span class="photo-upload-filename">{% if photo_form.instance.pk and photo_form.instance.image %}Фото сохранено — выберите файл, чтобы заменить{% else %}Нажмите, чтобы выбрать файл{% endif %}</span>
+                    <span class="photo-upload-title">{% if photo_form.image.value %}Заменить фотографию{% else %}Добавить фотографию{% endif %}</span>
+                    <span class="photo-upload-filename">{% if photo_form.image.value %}Фото из предыдущей отправки — выберите файл, чтобы заменить{% else %}Нажмите, чтобы выбрать файл{% endif %}</span>
                   </label>
                 </div>
                 {{ photo_form.id }}{{ photo_form.id.errors }}{{ photo_form.photo_slot }}{{ photo_form.photo_slot.errors }}
@@ -81,12 +82,13 @@
               </div>
             {% endfor %}
           </div>
-          <button class="btn task-submit" type="submit">{% if current_submission %}Обновить и отправить хозяину{% else %}Отправить хозяину{% endif %}</button>
+          <button class="btn task-submit" type="submit">{% if resubmission_mode %}Отправить исправленный отчёт{% elif current_submission %}Обновить и отправить хозяину{% else %}Отправить хозяину{% endif %}</button>
         </form>
       {% else %}
         <div class="alert">Для этого объекта ещё не настроены обязательные фото. Попросите хозяина изменить объект.</div>
       {% endif %}
     </section>
+    {% endif %}
   {% endif %}
 </main>
 

@@ -8,3 +8,4 @@ dj-database-url>=2.2,<4
 psycopg2-binary>=2.9.10,<3
 gunicorn>=23,<24
 whitenoise>=6.9,<7
+django-storages[s3]>=1.14.6,<2.0

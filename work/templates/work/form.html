@@ -31,7 +31,8 @@
           </div>
         </section>
         <section class="form-section">
-          <h2>Документы объекта (до 20 PDF)</h2>
+          <h2>Документы объекта (до 20 файлов)</h2>
+          <p class="muted">При создании объекта прикрепите хотя бы один PDF или таблицу Excel (.xls, .xlsx).</p>
           {% if site_documents %}
             <ul class="document-list">
               {% for doc in site_documents %}
@@ -40,10 +41,10 @@
             </ul>
           {% endif %}
           <div id="document-inputs" data-existing-count="{% if editing %}{{ object.documents.count }}{% else %}0{% endif %}">
-            <div class="file-row"><label>Выберите файл <input type="file" name="documents" accept="application/pdf,.pdf"></label><span class="file-name muted"></span><span class="file-upload-status" aria-live="polite"></span></div>
+            <div class="file-row"><label>Выберите PDF или Excel <input type="file" name="documents" accept="application/pdf,.pdf,application/vnd.ms-excel,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"></label><span class="file-name muted"></span><span class="file-upload-status" aria-live="polite"></span></div>
           </div>
-          <button type="button" class="btn btn-light btn-sm" id="add-document">＋ Добавить PDF</button>
-          <small class="muted" id="document-count">Добавлено: {% if editing %}{{ object.documents.count }}{% else %}0{% endif %} из 20</small>
+          <button type="button" class="btn btn-light btn-sm" id="add-document">＋ Добавить файл</button>
+          <small class="muted" id="document-count">Добавлено файлов: {% if editing %}{{ object.documents.count }}{% else %}0{% endif %} из 20</small>
         </section>
       {% endif %}
       <button type="submit" class="btn">Сохранить</button>

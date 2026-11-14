@@ -5,10 +5,9 @@
   <div class="grid">
     {% if user.is_staff %}
       <a class="tile" href="{% url 'plan_create' %}">Создать план работы<small>Назначить объект и задание работнику</small></a>
-      <a class="tile" href="{% url 'plan_list' %}">Планы работы<small>{{ needs_review }} ожидают проверки</small></a>
+      <a class="tile" href="{% url 'report_list' %}">Отчёты<small>{{ needs_review }} ожидают проверки</small></a>
       <a class="tile" href="{% url 'site_list' %}">Объекты<small>Адреса и привязанные работники</small></a>
       <a class="tile" href="{% url 'worker_list' %}">Работники<small>Контакты и объекты</small></a>
-      <a class="tile" href="{% url 'report_list' %}">Отчёты<small>Фото и описания работ</small></a>
     {% elif user.worker %}
       <a class="tile" href="{% url 'worker_plans' %}">Активные задания на сегодня<small>{{ active_today_count }} заданий</small></a>
       <a class="tile" href="{% url 'worker_plans' %}">Предстоящие задания<small>{{ active_future_count }} заданий на будущие дни</small></a>
@@ -18,20 +17,25 @@
   {% if user.is_staff %}
     <section class="card dashboard-hours-card">
       <h2>Рабочее время работников</h2>
+      <form method="get" class="worker-period-filter" data-auto-submit>
+        <div><label for="dashboard-date-from">С даты</label><input id="dashboard-date-from" name="date_from" type="date" value="{{ date_from }}"></div>
+        <div><label for="dashboard-date-to">По дату</label><input id="dashboard-date-to" name="date_to" type="date" value="{{ date_to }}"></div>
+      </form>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Работник</th><th>Состояние</th><th>Начало смены</th><th>Сегодня</th><th>За месяц</th></tr></thead>
+          <thead><tr><th>Работник</th><th>Состояние сейчас</th><th>Текущая смена</th><th>Сегодня</th><th>За месяц</th><th>Смены за выбранный день</th></tr></thead>
           <tbody>
           {% for row in worker_time_rows %}
             <tr>
               <td><a class="link" href="{% url 'worker_detail' row.worker.pk %}"><b>{{ row.worker.name }}</b></a><div class="muted">{{ row.worker.phone }}</div></td>
               <td>{% if row.current_shift %}<span class="status {% if row.over_eight_hours %}status-revision{% else %}status-approved{% endif %}" data-shift-start="{{ row.current_shift.started_at|date:'c' }}" data-on-time="● На смене" data-overdue="⚠ Смена больше 8 часов">{% if row.over_eight_hours %}⚠ Смена больше 8 часов{% else %}● На смене{% endif %}</span>{% else %}<span class="status status-planned">● Не на смене</span>{% endif %}</td>
-              <td>{% if row.current_shift %}{{ row.current_shift.started_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
+              <td>{% if row.current_shift %}Начало {{ row.current_shift.started_at|date:"d.m.Y H:i" }}{% else %}—{% endif %}</td>
               <td>{{ row.today_hours }}</td>
               <td>{{ row.month_hours }}</td>
+              <td>{% for shift in row.selected_period_shifts %}<div>{% if show_shift_dates %}{{ shift.started_at|date:"d.m.Y" }} · {% endif %}{{ shift.started_at|date:"H:i" }} — {% if shift.ended_at %}{% if show_shift_dates %}{{ shift.ended_at|date:"d.m.Y" }} · {% endif %}{{ shift.ended_at|date:"H:i" }}{% else %}<span class="muted">ещё идёт</span>{% endif %}</div>{% empty %}<span class="muted">Смен не было</span>{% endfor %}</td>
             </tr>
           {% empty %}
-            <tr><td colspan="5" class="muted">Работников пока нет.</td></tr>
+            <tr><td colspan="6" class="muted">Работников пока нет.</td></tr>
           {% endfor %}
           </tbody>
         </table>
