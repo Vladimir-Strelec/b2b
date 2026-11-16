@@ -121,7 +121,8 @@ LOCATION_GEOCODER_USER_AGENT = os.environ.get(
 )
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR))
+MEDIA_ROOT = DATA_DIR / "media"
 
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "dashboard"
