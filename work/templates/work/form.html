@@ -2,37 +2,21 @@
 {% block title %}{{ title }}{% endblock %}
 {% block heading %}{{ title }}{% endblock %}
 {% block content %}
-  <div class="card form-card">
+  <div class="card form-card{% if site_form %} site-form-card{% endif %}">
     <form method="post" enctype="multipart/form-data" id="site-form" novalidate>
       {% csrf_token %}
       <div id="site-form-feedback" class="alert alert-error" role="alert" hidden></div>
       {{ form.non_field_errors }}
+      {% if site_form %}<p class="muted">Категорию объекта можно создать здесь: <a class="link" href="{% url 'site_category_create' %}">Создать категорию</a>.</p>{% endif %}
       {{ form.as_div }}
       {% if site_form %}
         <section class="form-section">
-          <h2>Обязательные фото для работника</h2>
-          <p class="muted">Добавьте до 20 фото-полей и выберите категорию для каждого. Работник позже загрузит фотографию в каждое поле.</p>
-          {{ photo_requirement_formset.management_form }}
-          {{ photo_requirement_formset.non_form_errors }}
-          <div id="photo-requirements">
-            {% for requirement_form in photo_requirement_formset %}
-              <div class="photo-requirement-row">
-                {{ requirement_form.as_div }}
-                <button type="button" class="btn btn-danger btn-sm remove-requirement">Убрать поле</button>
-              </div>
-            {% endfor %}
-          </div>
-          <button type="button" class="btn btn-light btn-sm" id="add-requirement">＋ Добавить фото</button>
-          <div id="empty-requirement-form" hidden>
-            <div class="photo-requirement-row">
-              {{ photo_requirement_formset.empty_form.as_div }}
-              <button type="button" class="btn btn-danger btn-sm remove-requirement">Убрать поле</button>
-            </div>
-          </div>
+          <h2>Разрешение VAO</h2>
+          <p class="muted">Для объектов без требования VAO ограничений нет. Если VAO требуется, план можно назначить после получения разрешения и только на даты его действия.</p>
         </section>
         <section class="form-section">
           <h2>Документы объекта (до 20 файлов)</h2>
-          <p class="muted">При создании объекта прикрепите хотя бы один PDF или таблицу Excel (.xls, .xlsx).</p>
+          <p class="muted">При создании объекта прикрепите хотя бы один документ. Поддерживаются PDF, TXT, ZIP, RAR и другие типы файлов.</p>
           {% if site_documents %}
             <ul class="document-list">
               {% for doc in site_documents %}
@@ -41,7 +25,7 @@
             </ul>
           {% endif %}
           <div id="document-inputs" data-existing-count="{% if editing %}{{ object.documents.count }}{% else %}0{% endif %}">
-            <div class="file-row"><label>Выберите PDF или Excel <input type="file" name="documents" accept="application/pdf,.pdf,application/vnd.ms-excel,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"></label><span class="file-name muted"></span><span class="file-upload-status" aria-live="polite"></span></div>
+            <div class="file-row"><label>Выберите документ <input type="file" name="documents"></label><span class="file-name muted"></span><span class="file-upload-status" aria-live="polite"></span></div>
           </div>
           <button type="button" class="btn btn-light btn-sm" id="add-document">＋ Добавить файл</button>
           <small class="muted" id="document-count">Добавлено файлов: {% if editing %}{{ object.documents.count }}{% else %}0{% endif %} из 20</small>

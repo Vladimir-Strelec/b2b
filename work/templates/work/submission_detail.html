@@ -9,6 +9,7 @@
   <div class="actions"><a class="btn btn-light btn-sm" href="{% url 'report_list' %}">← Все отчёты</a><a class="btn btn-light btn-sm" href="{% url 'site_detail' object.plan.site.pk %}">К объекту</a></div>
 </div>
 
+<div class="submission-detail-layout">
 <section class="card submission-report-overview">
   <h2>Информация об отчёте</h2>
   <dl class="submission-report-meta">
@@ -22,52 +23,36 @@
     <div class="submission-report-task"><dt>Задание работнику</dt><dd>{{ object.plan.description|linebreaksbr }}</dd></div>
   </dl>
 
-  {% if object.review_comment %}
-    <div class="history-review-comment"><b>Ответ шефа:</b><p>{{ object.review_comment|linebreaksbr }}</p></div>
-  {% endif %}
-  {% if office_notes %}
-    <section class="submission-office-notes">
-      <h3>Дополнения от Office</h3>
-      {% for note in office_notes %}
-        <article class="history-review-comment"><b>Дополнение от Office · {{ note.created_at|date:"d.m.Y H:i" }}</b><p>{{ note.text|linebreaksbr }}</p></article>
-      {% endfor %}
-    </section>
-  {% endif %}
-  {% if object.status == "revision" %}
-    <details class="submission-office-note-form">
-      <summary class="btn btn-light">Добавить дополнение Office</summary>
-      <form method="post" class="review-form">{% csrf_token %}
-        <label for="office_note">Дополнение от Office</label>
-        <textarea id="office_note" name="office_note" rows="4" required placeholder="Добавьте уточнение отдельно от причины шефа"></textarea>
-        <button class="btn" type="submit" name="action" value="office_note">Сохранить дополнение</button>
-      </form>
-    </details>
-  {% endif %}
+</section>
 
-  <section class="submission-required-photos">
+  <section class="card submission-required-photos">
     <h3>Обязательные фото и результат работника</h3>
     {% if report_photo_groups or additional_report_photos %}
       <div class="submission-photo-grid">
         {% for group in report_photo_groups %}
           <article class="submission-photo-card">
-            <header><span class="submission-photo-icon" aria-hidden="true">📷</span><div><h4>{{ group.requirement.category.name }}</h4><span class="muted">Требуемое фото</span></div></header>
+            <header><svg class="mono-icon submission-photo-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.6 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.6L17 3H9Zm3 14.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z"/></svg><div><h4>{{ group.requirement.name }}</h4><span class="muted">Требуемое фото</span></div></header>
             {% if group.photo %}
-              <a class="submission-photo-image" href="{{ group.photo.image.url }}" target="_blank" rel="noopener"><img src="{{ group.photo.image.url }}" alt="{{ group.requirement.category.name }} — фото работника"></a>
+              <a class="submission-photo-image" data-photo-lightbox href="{% if group.photo.stamped_image %}{{ group.photo.stamped_image.url }}{% else %}{{ group.photo.image.url }}{% endif %}" target="_blank" rel="noopener"><img src="{% if group.photo.stamped_image %}{{ group.photo.stamped_image.url }}{% else %}{{ group.photo.image.url }}{% endif %}" alt="{{ group.requirement.name }} — фото с геометкой"></a>
+              {% if group.photo.stamped_image %}<a class="original-photo-link" href="{{ group.photo.image.url }}" target="_blank" rel="noopener">Оригинал без плашки</a>{% endif %}
+              {% include "work/photo_location.html" with photo=group.photo %}
               <div class="submission-photo-description"><b>Комментарий работника</b><p>{% if group.photo.description %}{{ group.photo.description|linebreaksbr }}{% else %}<span class="muted">Описание не добавлено.</span>{% endif %}</p></div>
             {% else %}<div class="submission-photo-missing">Фото в этой отправке не приложено.</div>{% endif %}
           </article>
         {% endfor %}
         {% for photo in additional_report_photos %}
           <article class="submission-photo-card">
-            <header><span class="submission-photo-icon" aria-hidden="true">📷</span><div><h4>{{ photo.category.name|default:"Дополнительное фото" }}</h4><span class="muted">Фото из отправки</span></div></header>
-            <a class="submission-photo-image" href="{{ photo.image.url }}" target="_blank" rel="noopener"><img src="{{ photo.image.url }}" alt="{{ photo.category }} — фото работника"></a>
+            <header><svg class="mono-icon submission-photo-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.6 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.6L17 3H9Zm3 14.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z"/></svg><div><h4>{{ photo.category.name|default:"Дополнительное фото" }}</h4><span class="muted">Фото из отправки</span></div></header>
+            <a class="submission-photo-image" data-photo-lightbox href="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" target="_blank" rel="noopener"><img src="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" alt="{{ photo.category }} — фото с геометкой"></a>
+            {% if photo.stamped_image %}<a class="original-photo-link" href="{{ photo.image.url }}" target="_blank" rel="noopener">Оригинал без плашки</a>{% endif %}
+            {% include "work/photo_location.html" with photo=photo %}
             <div class="submission-photo-description"><b>Комментарий работника</b><p>{% if photo.description %}{{ photo.description|linebreaksbr }}{% else %}<span class="muted">Описание не добавлено.</span>{% endif %}</p></div>
           </article>
         {% endfor %}
       </div>
     {% else %}<p class="muted">Для объекта не настроены обязательные фотографии, в этой отправке фото нет.</p>{% endif %}
   </section>
-</section>
+</div>
 
 {% if is_latest_submission and object.plan.status == "submitted" %}
   <section class="card submission-review-panel">
@@ -89,20 +74,52 @@
 {% endif %}
 
 <section class="card submission-conversation">
-  <h2>История отправок и переписка</h2>
-  {% for attempt in submission_history %}
-    <article class="submission-conversation-entry">
-      <header><b>Отправка {{ forloop.counter }} · {{ attempt.created_at|date:"d.m.Y H:i" }}</b>
-        {% if attempt.status == "submitted" and attempt.pk != latest_submission_id %}<span class="status status-planned">Заменён новой версией</span>
-        {% elif attempt.status %}<span class="status status-{{ attempt.status }}">{{ attempt.get_status_display }}</span>{% endif %}
-      </header>
-      {% if attempt.review_comment %}<div class="history-review-comment"><b>Комментарий шефа:</b><p>{{ attempt.review_comment|linebreaksbr }}</p></div>
-      {% elif attempt.status == "approved" %}<p class="muted">Отчёт принят.</p>
-      {% elif attempt.status == "submitted" and attempt.pk == latest_submission_id %}<p class="muted">Ожидает рассмотрения.</p>
-      {% elif attempt.status == "submitted" %}<p class="muted">Для плана отправлена более новая версия.</p>{% endif %}
-      {% for note in attempt.office_notes.all %}<div class="history-review-comment"><b>Дополнение от Office · {{ note.created_at|date:"d.m.Y H:i" }}</b><p>{{ note.text|linebreaksbr }}</p></div>{% endfor %}
-      {% if attempt.pk != object.pk %}<a class="btn btn-light btn-sm" href="{% url 'submission_detail' attempt.pk %}">Открыть эту отправку</a>{% endif %}
-    </article>
-  {% empty %}<p class="muted">История отправок отсутствует.</p>{% endfor %}
+  <details class="submission-chat-collapse">
+  <summary><h2>История отправок и переписка</h2><span class="muted">Нажмите, чтобы развернуть</span></summary>
+  <div class="chat-thread submission-chat-content">
+    {% for item in conversation_items %}
+      <div class="chat-row chat-row-{{ item.side }}">
+        <article class="chat-bubble chat-bubble-{{ item.kind }}">
+          <b class="chat-sender">{{ item.sender }}</b>
+          <p>{{ item.text|linebreaksbr }}</p>
+          {% if item.task_description %}<div class="chat-task"><b>Задание:</b> {{ item.task_description|linebreaksbr }}</div>{% endif %}
+          {% if item.photos %}
+            <div class="chat-photos">
+              {% for photo in item.photos %}
+                <figure class="chat-photo">
+                  <a data-photo-lightbox href="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}">
+                    <img src="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" alt="{{ photo.photo_slot.name|default:photo.category.name|default:'Фото отчёта' }}">
+                  </a>
+                  <figcaption>
+                    <b>{{ photo.photo_slot.name|default:photo.category.name|default:"Фото" }}</b>
+                    {% if photo.description %}<span>{{ photo.description|truncatechars:110 }}</span>{% endif %}
+                    {% if photo.location_address %}<span class="chat-photo-location">⌖ {{ photo.location_address }}</span>{% elif photo.location_latitude is not None and photo.location_longitude is not None %}<span class="chat-photo-location">Местоположение получено</span>{% endif %}
+                    {% if photo.location_latitude is not None and photo.location_longitude is not None %}<a class="chat-photo-map" href="{% if photo.location_address %}https://www.openstreetmap.org/search?query={{ photo.location_address|urlencode }}{% else %}https://www.openstreetmap.org/?mlat={{ photo.location_latitude }}&mlon={{ photo.location_longitude }}#map=18/{{ photo.location_latitude }}/{{ photo.location_longitude }}{% endif %}" target="_blank" rel="noopener">Открыть геометку</a>{% endif %}
+                  </figcaption>
+                </figure>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% if item.created_at %}<time>{{ item.created_at|date:"d.m.Y H:i" }}</time>{% else %}<small class="muted">Время решения не сохранено</small>{% endif %}
+        </article>
+      </div>
+    {% empty %}<p class="muted">История отправок отсутствует.</p>{% endfor %}
+  </div>
+  {% if is_latest_submission and object.status == "revision" %}
+    <details class="submission-office-note-form">
+      <summary class="btn btn-light">Добавить дополнение Office</summary>
+      <form method="post" class="review-form">{% csrf_token %}
+        <label for="office_note">Сообщение Office</label>
+        <textarea id="office_note" name="office_note" rows="3" required placeholder="Напишите уточнение"></textarea>
+        <button class="btn" type="submit" name="action" value="office_note">Отправить</button>
+      </form>
+    </details>
+  {% endif %}
+  </details>
 </section>
+
+<dialog class="photo-lightbox" id="photo-lightbox" aria-label="Просмотр фотографии">
+  <button type="button" class="photo-lightbox-close" aria-label="Закрыть фото">×</button>
+  <img src="" alt="Увеличенная фотография">
+</dialog>
 {% endblock %}

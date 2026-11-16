@@ -1,0 +1,13 @@
+<div class="photo-location-details">
+  {% if photo.location_latitude is not None and photo.location_longitude is not None %}
+    <b>{{ photo.location_address|default:"Адрес рядом с точкой не найден" }}</b>
+    {% if photo.location_accuracy is not None %}<span class="muted">Место определено примерно · точность ±{{ photo.location_accuracy|floatformat:0 }} м</span>{% endif %}
+    <a class="btn btn-light btn-sm location-map-link" href="{% if photo.location_address %}https://www.openstreetmap.org/search?query={{ photo.location_address|urlencode }}{% else %}https://www.openstreetmap.org/?mlat={{ photo.location_latitude }}&mlon={{ photo.location_longitude }}#map=18/{{ photo.location_latitude }}/{{ photo.location_longitude }}{% endif %}" target="_blank" rel="noopener">
+      <svg class="mono-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.2"/></svg>
+      {% if photo.location_address %}Открыть адрес на карте{% else %}Открыть точку на карте{% endif %}
+    </a>
+    {% if photo.location_address %}<small class="photo-location-attribution">Источник адреса: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></small>{% endif %}
+  {% else %}
+    <span class="muted">Местоположение для этого фото не получено.</span>
+  {% endif %}
+</div>

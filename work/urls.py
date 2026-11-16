@@ -19,6 +19,7 @@ urlpatterns = [
     path("shift/end/", views.WorkerShiftEndView.as_view(), name="shift_end"),
 
     path("sites/new/", views.SiteCreateView.as_view(), name="site_create"),
+    path("site-categories/new/", views.PhotoCategoryCreateView.as_view(), name="site_category_create"),
     path("sites/<int:pk>/edit/", views.SiteUpdateView.as_view(), name="site_edit"),
     path("sites/<int:pk>/delete/", views.SiteDeleteView.as_view(), name="site_delete"),
     path("sites/<int:pk>/complete/", views.SiteCompleteView.as_view(), name="site_complete"),

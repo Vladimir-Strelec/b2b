@@ -1,7 +1,7 @@
 import django_filters
 from django.forms import DateInput, TextInput
 from django.db.models import Q
-from .models import Worker, Site, Report, WorkPlan
+from .models import Worker, Site, Report, WorkPlan, PhotoCategory
 from django_filters.widgets import RangeWidget
 from django_filters import ChoiceFilter
 
@@ -20,8 +20,11 @@ class SiteFilter(django_filters.FilterSet):
             "autocomplete": "off",
         }),
     )
-    site_type = django_filters.ChoiceFilter(
-        choices=Site.SiteType.choices, label="Тип объекта"
+    site_type = django_filters.ModelChoiceFilter(
+        field_name="category",
+        queryset=PhotoCategory.objects.filter(is_active=True),
+        label="Тип объекта",
+        empty_label="Все типы",
     )
     state = ChoiceFilter(
         choices=(

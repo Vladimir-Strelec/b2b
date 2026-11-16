@@ -10,7 +10,7 @@
       <h2>{{ display_plan.site.name }}</h2>
       <div class="task-meta">
         <div class="task-meta-item"><span class="task-meta-label">Номер объекта</span><strong class="task-meta-value">{{ display_plan.site.object_number }}</strong></div>
-        <div class="task-meta-item"><span class="task-meta-label">Тип объекта</span><span class="task-type">{{ display_plan.site.get_site_type_display }}</span></div>
+        <div class="task-meta-item"><span class="task-meta-label">Тип объекта</span><span class="task-type">{{ display_plan.site.category.name|default:"—" }}</span></div>
         <div class="task-meta-item"><span class="task-meta-label">Адрес объекта</span><strong class="task-meta-value">{{ display_plan.site.address }}</strong></div>
       </div>
     </div>
@@ -66,7 +66,7 @@
           <div class="required-photo-grid">
             {% for photo_form in photo_formset %}
               <div class="photo-entry required-photo-entry" data-has-saved-image="{% if photo_form.instance.pk and photo_form.instance.image %}true{% else %}false{% endif %}">
-                <div class="photo-slot-title"><span class="photo-slot-number">{{ forloop.counter }}</span><h4>{{ photo_form.slot.category.name }}</h4></div>
+                <div class="photo-slot-title"><span class="photo-slot-number">{{ forloop.counter }}</span><h4>{{ photo_form.slot.name }} · фото {{ forloop.counter }}</h4></div>
                 <div class="photo-upload-area">
                   {{ photo_form.image }}{{ photo_form.image.errors }}
                   <label class="photo-upload-control" for="{{ photo_form.image.id_for_label }}">
@@ -76,7 +76,9 @@
                     <span class="photo-upload-filename">{% if photo_form.image.value %}Фото из предыдущей отправки — выберите файл, чтобы заменить{% else %}Нажмите, чтобы выбрать файл{% endif %}</span>
                   </label>
                 </div>
+                <div class="photo-location-status" role="status">{% if photo_form.location_latitude.value %}Сохранено прежнее местоположение этого фото; при выборе нового снимка точка обновится.{% else %}После выбора снимка приложение определит отдельное местоположение для этого фото.{% endif %}</div>
                 {{ photo_form.id }}{{ photo_form.id.errors }}{{ photo_form.photo_slot }}{{ photo_form.photo_slot.errors }}
+                {{ photo_form.location_latitude }}{{ photo_form.location_longitude }}{{ photo_form.location_accuracy }}{{ photo_form.location_captured_at }}
                 <label class="photo-description-label" for="{{ photo_form.description.id_for_label }}">Что сделано на этом фото</label>
                 {{ photo_form.description }}{{ photo_form.description.errors }}
               </div>
@@ -103,7 +105,9 @@
     <div class="current-submission-photos">
       {% for photo in current_submission.photos.all %}
         <article class="current-report-photo">
-          <a href="{{ photo.image.url }}" target="_blank" rel="noopener"><img src="{{ photo.image.url }}" alt="Фото: {{ photo.category }}"></a>
+          <a href="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" target="_blank" rel="noopener"><img src="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" alt="Фото с геометкой: {{ photo.category }}"></a>
+          {% if photo.stamped_image %}<a class="original-photo-link" href="{{ photo.image.url }}" target="_blank" rel="noopener">Оригинал без плашки</a>{% endif %}
+          {% include "work/photo_location.html" with photo=photo %}
           <div class="current-report-photo-info"><b>{{ photo.category }}</b>{% if photo.description %}<p>{{ photo.description|linebreaksbr }}</p>{% else %}<p class="muted">Описание не добавлено.</p>{% endif %}</div>
         </article>
       {% empty %}<p class="muted">В отправке нет фотографий.</p>{% endfor %}
@@ -115,22 +119,33 @@
 </div>
 
 <section class="submission-history">
-  <header class="submission-history-heading"><div><div class="task-eyebrow">{% if user.is_staff %}Все отправки по объекту{% else %}Ваши отправки по объекту{% endif %}</div><h2>История отправок</h2></div><span class="badge">{{ site_submission_history|length }} отправок</span></header>
-  {% for submission in site_submission_history %}
-    <details class="history-entry">
-      <summary class="history-summary">
-        <span class="history-date">{{ submission.created_at|date:"d.m.Y H:i" }}</span>
-        <span class="history-plan-meta">План на {{ submission.plan.work_date|date:"d.m.Y" }} · {{ submission.plan.worker.name }}</span>
-        {% if submission.status %}<span class="status status-{{ submission.status }}">{% if submission.status == "approved" %}✓{% elif submission.status == "revision" %}✕{% else %}!{% endif %} {{ submission.get_status_display }}</span>{% else %}<span class="muted">Статус не сохранён</span>{% endif %}
-      </summary>
-      <div class="history-photos">
-        {% for photo in submission.photos.all %}
-          <article class="history-photo"><a href="{{ photo.image.url }}" target="_blank" rel="noopener"><img src="{{ photo.image.url }}" alt="Фото: {{ photo.category }}" loading="lazy"></a><div class="history-photo-info"><b>{{ photo.category }}</b>{% if photo.description %}<p>{{ photo.description|linebreaksbr }}</p>{% endif %}</div></article>
-        {% endfor %}
-      </div>
-      {% if submission.review_comment %}<div class="history-review-comment"><b>Причина возврата на доработку:</b><p>{{ submission.review_comment|linebreaksbr }}</p></div>{% endif %}
-    </details>
-  {% empty %}<p class="muted">Отправок по этому объекту пока нет.</p>{% endfor %}
+  <details class="submission-chat-collapse">
+    <summary><h2>История отправок и переписка по этому плану</h2><span class="badge">{{ plan_submission_history|length }} отправок</span></summary>
+    {% if plan_conversation_items %}<div class="chat-thread submission-chat-content">
+      {% for item in plan_conversation_items %}
+        <div class="chat-row chat-row-{{ item.side }}">
+          <article class="chat-bubble chat-bubble-{{ item.kind }}">
+            <b class="chat-sender">{{ item.sender }}</b>
+            <p>{{ item.text|linebreaksbr }}</p>
+            {% if item.task_description %}<div class="chat-task"><b>Задание:</b> {{ item.task_description|linebreaksbr }}</div>{% endif %}
+            {% if item.photos %}<div class="chat-photos">
+              {% for photo in item.photos %}
+                <figure class="chat-photo">
+                  <a href="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" target="_blank" rel="noopener"><img src="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" alt="Фото: {{ photo.category }}" loading="lazy"></a>
+                  <figcaption><b>{{ photo.photo_slot.name|default:photo.category.name|default:"Фото" }}</b>
+                    {% if photo.description %}<span>{{ photo.description|truncatechars:110 }}</span>{% endif %}
+                    {% if photo.location_address %}<span class="chat-photo-location">⌖ {{ photo.location_address }}</span>{% endif %}
+                    {% if photo.location_latitude is not None and photo.location_longitude is not None %}<a class="chat-photo-map" href="{% if photo.location_address %}https://www.openstreetmap.org/search?query={{ photo.location_address|urlencode }}{% else %}https://www.openstreetmap.org/?mlat={{ photo.location_latitude }}&mlon={{ photo.location_longitude }}#map=18/{{ photo.location_latitude }}/{{ photo.location_longitude }}{% endif %}" target="_blank" rel="noopener">Открыть геометку</a>{% endif %}
+                  </figcaption>
+                </figure>
+              {% endfor %}
+            </div>{% endif %}
+            {% if item.created_at %}<time>{{ item.created_at|date:"d.m.Y H:i" }}</time>{% else %}<small class="muted">Время ответа не сохранено</small>{% endif %}
+          </article>
+        </div>
+      {% endfor %}
+    </div>{% else %}<p class="muted">По этому плану отправок пока нет.</p>{% endif %}
+  </details>
 </section>
-<a class="btn btn-light" href="{% if user.is_staff %}{% url 'plan_list' %}{% else %}{% url 'worker_plans' %}{% endif %}">← К планам</a>
+<a class="btn btn-light" href="{% if user.is_staff %}{% url 'plan_list' %}{% else %}{% url 'worker_plans' %}{% endif %}">← {% if user.is_staff %}К планам{% else %}К заданиям{% endif %}</a>
 {% endblock %}

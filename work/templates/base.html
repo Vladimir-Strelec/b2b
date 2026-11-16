@@ -1,11 +1,11 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{ LANGUAGE_CODE }}">
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1" name="viewport">
     <title>{% block title %}Кабинет{% endblock %}</title>
-    <link href="{% static 'work/css/app.css' %}?v=20261114-site-date-find" rel="stylesheet">
+    <link href="{% static 'work/css/app.css' %}?v=20261116-14" rel="stylesheet">
 </head>
 <body>
 <div aria-hidden="true" class="bg"></div>
@@ -21,19 +21,20 @@
 
             <a class="{% if request.resolver_match.url_name == 'plan_list' or request.resolver_match.url_name == 'plan_create' or request.resolver_match.url_name == 'plan_edit' or request.resolver_match.url_name == 'plan_detail' or request.resolver_match.url_name == 'plan_delete' %}active{% endif %}"
                href="{% url 'plan_list' %}">Планы работы</a>
-            <a class="{% if request.resolver_match.url_name == 'site_list' %}active{% endif %}"
+            <a class="{% if request.resolver_match.url_name == 'site_list' or request.resolver_match.url_name == 'site_completed_list' or request.resolver_match.url_name == 'site_create' or request.resolver_match.url_name == 'site_category_create' or request.resolver_match.url_name == 'site_detail' or request.resolver_match.url_name == 'site_edit' or request.resolver_match.url_name == 'site_delete' %}active{% endif %}"
                href="{% url 'site_list' %}">Объекты</a>
-            <a class="{% if request.resolver_match.url_name == 'report_list' or request.resolver_match.url_name == 'report_detail' or request.resolver_match.url_name == 'submission_detail' %}active{% endif %}"
+            <a class="{% if request.resolver_match.url_name == 'report_list' or request.resolver_match.url_name == 'report_detail' or request.resolver_match.url_name == 'submission_detail' or request.resolver_match.url_name == 'report_create' %}active{% endif %}"
                href="{% url 'report_list' %}">Отчёты</a>
             <a class="{% if request.resolver_match.url_name == 'worker_list' or request.resolver_match.url_name == 'worker_create' or request.resolver_match.url_name == 'worker_detail' or request.resolver_match.url_name == 'worker_edit' or request.resolver_match.url_name == 'worker_delete' %}active{% endif %}"
                href="{% url 'worker_list' %}">Работники</a>
             {% endif %}
             {% if user.worker and not user.is_staff %}
-            <a class="{% if request.resolver_match.url_name == 'report_create' %}active{% endif %}"
-               href="{% url 'worker_plans' %}">Мои планы</a>
+            <a class="{% if request.resolver_match.url_name == 'report_create' or request.resolver_match.url_name == 'plan_detail' %}active{% endif %}"
+               href="{% url 'worker_plans' %}">Мои задания</a>
             {% endif %}
         </nav>
         <div class="sidebar-foot">
+            {% if user.is_staff %}<a class="btn btn-light" href="{% url 'site_category_create' %}">＋ Создать категорию объекта</a>{% endif %}
             <span class="user">{{ user.username }}</span>
             <form action="{% url 'logout' %}" method="post">
                 {% csrf_token %}
@@ -43,7 +44,15 @@
     </aside>
 
     <main class="content">
-        <header class="topbar"><h1>{% block heading %}{% endblock %}</h1></header>
+        <header class="topbar"><h1>{% block heading %}{% endblock %}</h1>
+            <form class="language-switcher" action="{% url 'set_language' %}" method="post">
+                {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <label class="sr-only" for="site-language">Язык сайта</label>
+                <select id="site-language" name="language" aria-label="Язык сайта" onchange="this.form.submit()">
+                    {% for code, name in LANGUAGES %}<option value="{{ code }}" {% if code == LANGUAGE_CODE %}selected{% endif %}>{{ code|upper }}</option>{% endfor %}
+                </select>
+            </form>
+        </header>
         {% for message in messages %}
         <div class="alert alert-{{ message.tags }}">{{ message }}</div>
         {% endfor %}
@@ -52,10 +61,18 @@
 </div>
 {% else %}
 <main class="auth">
+    <form class="language-switcher auth-language-switcher" action="{% url 'set_language' %}" method="post">
+        {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <label class="sr-only" for="auth-site-language">Язык сайта</label>
+        <select id="auth-site-language" name="language" aria-label="Язык сайта" onchange="this.form.submit()">
+            {% for code, name in LANGUAGES %}<option value="{{ code }}" {% if code == LANGUAGE_CODE %}selected{% endif %}>{{ code|upper }}</option>{% endfor %}
+        </select>
+    </form>
     {% block auth %}{% endblock %}
 </main>
 {% endif %}
 
-<script defer src="{% static 'work/js/app.js' %}?v=20261114-01"></script>
+<script defer src="{% static 'work/js/app.js' %}?v=20261116-8"></script>
+<script defer src="{% static 'work/js/language.js' %}?v=20261116-2"></script>
 </body>
 </html>

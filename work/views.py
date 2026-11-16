@@ -1,6 +1,15 @@
 from itertools import groupby
 from types import SimpleNamespace
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone as datetime_timezone
+from decimal import Decimal
+from io import BytesIO
+import hashlib
+import json
+import os
+import textwrap
+import time as time_module
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.forms import inlineformset_factory
@@ -23,16 +32,19 @@ from django.db.models import Case, Count, DateTimeField, IntegerField, OuterRef,
 from django.db.models.functions import Coalesce
 from django.db import IntegrityError, transaction
 from django.utils.dateparse import parse_date
+from django.core.files.base import ContentFile
+from django.conf import settings
 from django_filters.views import FilterView
 
 from .filters import ReportFilter, SiteFilter
 from .forms import (
-    ReportForm, SiteForm, SitePhotoRequirementFormSet, WorkerForm,
+    ReportForm, SiteForm, PhotoCategoryForm, PhotoCategoryPhotoFormSet, WorkerForm,
     WorkPlanForm, WorkPhotoForm, RequiredSlotInlineFormSet,
 )
 from .models import (
     Report, Site, SiteDocument, SitePhotoRequirement, Worker, WorkPlan,
-    WorkPhoto, WorkShift, WorkSubmission, WorkSubmissionOfficeNote,
+    WorkPhoto, WorkShift, WorkSubmission, WorkSubmissionOfficeNote, WorkSubmissionEvent, PhotoCategory,
+    LocationGeocodeCache, LocationGeocodeGate,
 )
 
 
@@ -57,6 +69,220 @@ def _day_bounds(day):
     start = timezone.make_aware(datetime.combine(day, time.min), tz)
     end = timezone.make_aware(datetime.combine(day + timedelta(days=1), time.min), tz)
     return start, end
+
+
+def _watermark_font(size):
+    from PIL import ImageFont
+
+    font_paths = [
+        os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "arial.ttf"),
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    ]
+    for font_path in font_paths:
+        try:
+            return ImageFont.truetype(font_path, size=size)
+        except (OSError, IOError):
+            continue
+    return ImageFont.load_default()
+
+
+def reverse_geocode_photo(latitude, longitude):
+    """Resolve one photo's coordinates to a cached approximate address via Nominatim."""
+    if latitude is None or longitude is None:
+        return ""
+    lat_key = f"{Decimal(latitude):.5f}"
+    lon_key = f"{Decimal(longitude):.5f}"
+    cache_key = hashlib.sha256(f"{lat_key},{lon_key}".encode("ascii")).hexdigest()
+    cached = LocationGeocodeCache.objects.filter(pk=cache_key).values_list("address", flat=True).first()
+    if cached:
+        return cached
+
+    endpoint = getattr(settings, "LOCATION_GEOCODER_URL", "https://nominatim.openstreetmap.org/reverse")
+    params = urlencode({
+        "format": "jsonv2", "lat": lat_key, "lon": lon_key,
+        "zoom": 18, "addressdetails": 1, "layer": "address", "accept-language": "ru,en",
+    })
+    user_agent = getattr(
+        settings, "LOCATION_GEOCODER_USER_AGENT",
+        "B2BObjectReports/1.0 (photo location reverse geocoding)",
+    )
+
+    # A database row lock keeps requests from multiple Gunicorn workers below Nominatim's 1 req/s limit.
+    while True:
+        wait_seconds = 0
+        with transaction.atomic():
+            gate = LocationGeocodeGate.objects.select_for_update().get(pk=1)
+            now = timezone.now()
+            if gate.last_request_at:
+                wait_seconds = max(0, 1.1 - (now - gate.last_request_at).total_seconds())
+            if wait_seconds <= 0:
+                gate.last_request_at = now
+                gate.save(update_fields=["last_request_at"])
+        if wait_seconds <= 0:
+            break
+        time_module.sleep(wait_seconds)
+
+    request = Request(
+        f"{endpoint}?{params}",
+        headers={"User-Agent": user_agent, "Accept": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        parts = payload.get("address") or {}
+        street = " ".join(part for part in (parts.get("house_number"), parts.get("road") or parts.get("pedestrian") or parts.get("path")) if part)
+        locality = next((parts.get(key) for key in ("city", "town", "village", "suburb", "municipality", "county") if parts.get(key)), "")
+        address = ", ".join(part for part in (street, locality) if part)
+        if not address:
+            address = (payload.get("display_name") or "").strip()
+        address = address[:255]
+    except (OSError, ValueError, KeyError):
+        return ""
+    if address:
+        LocationGeocodeCache.objects.update_or_create(
+            key=cache_key, defaults={"address": address},
+        )
+    return address
+
+
+def photo_exif_location(photo):
+    """Use GPS embedded by the camera when present; browser location is the fallback."""
+    from PIL import ExifTags, Image
+
+    try:
+        with photo.image.open("rb") as uploaded:
+            image = Image.open(uploaded)
+            exif = image.getexif()
+            gps_info = exif.get_ifd(0x8825)
+        gps = {ExifTags.GPSTAGS.get(tag, tag): value for tag, value in gps_info.items()}
+        if not all(key in gps for key in ("GPSLatitude", "GPSLatitudeRef", "GPSLongitude", "GPSLongitudeRef")):
+            return None
+
+        def degrees(values):
+            return float(values[0]) + float(values[1]) / 60 + float(values[2]) / 3600
+
+        latitude = degrees(gps["GPSLatitude"])
+        longitude = degrees(gps["GPSLongitude"])
+        if gps["GPSLatitudeRef"] in ("S", b"S"):
+            latitude = -latitude
+        if gps["GPSLongitudeRef"] in ("W", b"W"):
+            longitude = -longitude
+        latitude = Decimal(f"{latitude:.6f}")
+        longitude = Decimal(f"{longitude:.6f}")
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            return None
+
+        captured_at = None
+        date_text = gps.get("GPSDateStamp")
+        time_values = gps.get("GPSTimeStamp")
+        if date_text and time_values:
+            date_part = date_text.decode("ascii") if isinstance(date_text, bytes) else str(date_text)
+            hour, minute = int(float(time_values[0])), int(float(time_values[1]))
+            seconds = float(time_values[2])
+            captured_at = datetime.strptime(date_part, "%Y:%m:%d").replace(
+                hour=hour, minute=minute, second=int(seconds),
+                microsecond=int((seconds % 1) * 1_000_000), tzinfo=datetime_timezone.utc,
+            )
+        else:
+            original_text = exif.get(0x9003) or exif.get(0x0132)
+            if original_text:
+                if isinstance(original_text, bytes):
+                    original_text = original_text.decode("ascii", errors="ignore")
+                captured_at = timezone.make_aware(
+                    datetime.strptime(str(original_text), "%Y:%m:%d %H:%M:%S"),
+                    timezone.get_current_timezone(),
+                )
+        return latitude, longitude, captured_at
+    except (OSError, ValueError, TypeError, KeyError, ZeroDivisionError, OverflowError):
+        return None
+
+
+def _draw_location_icon(draw, kind, x, y, size, color, width):
+    cx, cy = x + size / 2, y + size / 2
+    if kind == "pin":
+        draw.ellipse((cx-size*.25, cy-size*.37, cx+size*.25, cy+size*.13), outline=color, width=width)
+        draw.line((cx-size*.18, cy+size*.02, cx, cy+size*.38, cx+size*.18, cy+size*.02), fill=color, width=width, joint="curve")
+        draw.ellipse((cx-size*.07, cy-size*.19, cx+size*.07, cy-size*.05), outline=color, width=width)
+    elif kind == "target":
+        draw.ellipse((cx-size*.32, cy-size*.32, cx+size*.32, cy+size*.32), outline=color, width=width)
+        draw.ellipse((cx-size*.1, cy-size*.1, cx+size*.1, cy+size*.1), outline=color, width=width)
+        draw.line((cx-size*.48, cy, cx-size*.24, cy, cx+size*.24, cy, cx+size*.48, cy), fill=color, width=width)
+        draw.line((cx, cy-size*.48, cx, cy-size*.24, cx, cy+size*.24, cx, cy+size*.48), fill=color, width=width)
+    elif kind == "calendar":
+        draw.rounded_rectangle((x+size*.13, y+size*.2, x+size*.87, y+size*.85), radius=size*.08, outline=color, width=width)
+        draw.line((x+size*.13, y+size*.4, x+size*.87, y+size*.4), fill=color, width=width)
+        draw.line((x+size*.32, y+size*.1, x+size*.32, y+size*.3), fill=color, width=width)
+        draw.line((x+size*.68, y+size*.1, x+size*.68, y+size*.3), fill=color, width=width)
+        for dx in (.32, .52, .72):
+            draw.ellipse((x+size*(dx-.025), y+size*.52, x+size*(dx+.025), y+size*.57), fill=color)
+    else:
+        draw.ellipse((x+size*.12, y+size*.12, x+size*.88, y+size*.88), outline=color, width=width)
+        draw.line((cx, cy, cx, y+size*.3, x+size*.7, cy), fill=color, width=width, joint="curve")
+
+
+def create_stamped_photo(photo, submission):
+    """Create a display copy with an address/location/date panel; keep the source photo intact."""
+    if not photo.image:
+        return
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+    with photo.image.open("rb") as uploaded:
+        image = ImageOps.exif_transpose(Image.open(uploaded)).convert("RGB")
+    scale = max(.65, min(image.width / 1000, 1.8))
+    font = _watermark_font(max(14, round(22 * scale)))
+    address = photo.location_address.strip()
+    if not address:
+        address = "Адрес места съёмки не определён"
+    if photo.location_accuracy is not None:
+        location = f"Точность примерно ±{photo.location_accuracy:.0f} м"
+    else:
+        location = "Адрес приблизительный"
+    stamp_time = timezone.localtime(photo.location_captured_at or submission.created_at or timezone.now())
+    rows = [
+        ("pin", f"Место: {address}"),
+        ("target", location),
+        ("calendar", stamp_time.strftime("%d.%m.%Y")),
+        ("clock", stamp_time.strftime("%H:%M")),
+    ]
+    draw = ImageDraw.Draw(image)
+    pad = max(12, round(18 * scale))
+    icon_size = max(20, round(27 * scale))
+    gap = max(8, round(12 * scale))
+    line_gap = max(7, round(11 * scale))
+    max_text_width = int(image.width * .78) - icon_size - gap - pad * 2
+    chars_per_line = max(12, int(max_text_width / (22 * scale * .55)))
+    expanded_rows = []
+    for kind, value in rows:
+        wrapped = textwrap.wrap(value, width=chars_per_line, break_long_words=True, break_on_hyphens=False) or [value]
+        expanded_rows.extend((kind, line) for line in wrapped[:3])
+    row_height = max(icon_size, round(28 * scale))
+    panel_width = min(int(image.width * .92), max(
+        draw.textbbox((0, 0), value, font=font)[2] + icon_size + gap + pad * 2
+        for _, value in expanded_rows
+    ))
+    panel_height = pad * 2 + len(expanded_rows) * row_height + max(0, len(expanded_rows)-1) * line_gap
+    left, top = pad, max(pad, image.height - panel_height - pad)
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    layer_draw = ImageDraw.Draw(layer)
+    layer_draw.rounded_rectangle(
+        (left, top, left + panel_width, top + panel_height),
+        radius=max(10, round(18 * scale)), fill=(12, 16, 22, 178),
+    )
+    image = Image.alpha_composite(image.convert("RGBA"), layer)
+    draw = ImageDraw.Draw(image)
+    white = (255, 255, 255, 255)
+    y = top + pad
+    for kind, value in expanded_rows:
+        _draw_location_icon(draw, kind, left + pad, y + (row_height-icon_size)//2, icon_size, white, max(2, round(2*scale)))
+        draw.text((left + pad + icon_size + gap, y), value, font=font, fill=white, stroke_width=0)
+        y += row_height + line_gap
+    buffer = BytesIO()
+    image.convert("RGB").save(buffer, format="JPEG", quality=92, optimize=True)
+    if photo.stamped_image:
+        photo.stamped_image.delete(save=False)
+    photo.stamped_image.save(f"submission-{submission.pk}-photo-{photo.pk}.jpg", ContentFile(buffer.getvalue()), save=False)
+    photo.save(update_fields=["stamped_image"])
 
 
 def _month_start(day):
@@ -212,7 +438,7 @@ class WorkPlanListView(StaffRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = WorkPlan.objects.select_related("site", "worker")
-        for key, field in (("date", "work_date"), ("site", "site_id"), ("site_type", "site__site_type"), ("status", "status")):
+        for key, field in (("date", "work_date"), ("site", "site_id"), ("site_type", "site__category_id"), ("status", "status")):
             value = self.request.GET.get(key)
             if value:
                 qs = qs.filter(**{field: value})
@@ -233,7 +459,10 @@ class WorkPlanListView(StaffRequiredMixin, ListView):
             Site.objects.order_by("name").values("id", "object_number", "name", "address")
         )
         ctx["statuses"] = WorkPlan.Status.choices
-        ctx["site_types"] = Site.SiteType.choices
+        ctx["site_types"] = [
+            (str(category.pk), category.name)
+            for category in PhotoCategory.objects.filter(is_active=True)
+        ]
         today = timezone.localdate()
         filter_keys = ("date", "site", "site_search", "site_type", "status")
         has_filters = any(self.request.GET.get(key, "").strip() for key in filter_keys)
@@ -284,6 +513,13 @@ class WorkPlanCreateView(StaffRequiredMixin, CreateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        ctx["sites_without_permit"] = Site.objects.filter(
+            requires_work_permit=True,
+        ).filter(
+            Q(has_work_permit=False) | Q(permit_valid_from__isnull=True) |
+            Q(permit_valid_until__isnull=True) | Q(permit_valid_from__gt=timezone.localdate()) |
+            Q(permit_valid_until__lt=timezone.localdate())
+        ).order_by("name")
         return ctx
 
     def form_valid(self, form):
@@ -352,23 +588,9 @@ def validate_pdf_documents(files, remaining, owner_label):
 
 def validate_site_documents(files, remaining, required=False):
     if required and not files:
-        return "При создании объекта прикрепите хотя бы один файл PDF или Excel."
+        return "При создании объекта прикрепите хотя бы один документ."
     if len(files) > remaining:
         return f"К объекту можно прикрепить не более 20 файлов; свободно мест: {remaining}."
-    signatures = {
-        ".pdf": (b"%PDF-", "PDF"),
-        ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "Excel"),
-        ".xlsx": (b"PK\x03\x04", "Excel"),
-    }
-    for uploaded in files:
-        extension = "." + uploaded.name.rsplit(".", 1)[-1].lower() if "." in uploaded.name else ""
-        signature = signatures.get(extension)
-        if not signature:
-            return f"Файл «{uploaded.name}» должен быть формата PDF, XLS или XLSX."
-        expected, file_type = signature
-        if uploaded.read(len(expected)) != expected:
-            return f"Файл «{uploaded.name}» не распознан как {file_type}."
-        uploaded.seek(0)
     return ""
 
 
@@ -416,7 +638,13 @@ def resubmission_photo_initial(plan, previous_submission):
                 (item for item in photos if item.pk not in used_photo_ids and item.category_id == slot.category_id),
                 None,
             )
-        row = {"photo_slot": slot.pk}
+        row = {
+            "photo_slot": slot.pk,
+            "location_latitude": photo.location_latitude if photo else None,
+            "location_longitude": photo.location_longitude if photo else None,
+            "location_accuracy": photo.location_accuracy if photo else None,
+            "location_captured_at": photo.location_captured_at if photo else None,
+        }
         if photo:
             used_photo_ids.add(photo.pk)
             row.update(image=photo.image, description=photo.description)
@@ -425,21 +653,11 @@ def resubmission_photo_initial(plan, previous_submission):
 
 
 class SiteFormProcessMixin:
-    """Handle an object's fixed photo checklist and its attached PDF files."""
-
-    def get_photo_requirement_formset(self, instance=None, data=None):
-        return SitePhotoRequirementFormSet(
-            data=data,
-            instance=instance or self.object or Site(),
-            prefix="requirements",
-        )
+    """Handle an object's category-based photo checklist and attached files."""
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["site_form"] = True
-        ctx["photo_requirement_formset"] = getattr(
-            self, "photo_requirement_formset", None
-        ) or self.get_photo_requirement_formset()
         ctx["site_documents"] = (
             self.object.documents.all() if getattr(self, "object", None) and self.object.pk else []
         )
@@ -449,9 +667,6 @@ class SiteFormProcessMixin:
     def form_valid(self, form):
         current_count = self.object.documents.count() if self.object and self.object.pk else 0
         uploaded_files = [f for f in self.request.FILES.getlist("documents") if f.name]
-        self.photo_requirement_formset = self.get_photo_requirement_formset(
-            instance=form.instance, data=self.request.POST,
-        )
         error = validate_site_documents(
             uploaded_files,
             20 - current_count,
@@ -461,16 +676,18 @@ class SiteFormProcessMixin:
             form.add_error(None, error)
             return self.form_invalid(form)
 
-        if not self.photo_requirement_formset.is_valid():
-            return self.form_invalid(form)
-
+        previous_category_id = self.object.category_id if self.object and self.object.pk else None
         self.object = form.save()
-        self.photo_requirement_formset.instance = self.object
-        self.photo_requirement_formset.save()
-        for order, requirement in enumerate(self.object.photo_requirements.order_by("pk")):
-            if requirement.order != order:
-                requirement.order = order
-                requirement.save(update_fields=["order"])
+        if previous_category_id != self.object.category_id or not self.object.photo_requirements.exists():
+            self.object.photo_requirements.all().delete()
+            category_slots = list(self.object.category.photo_slots.all())
+            SitePhotoRequirement.objects.bulk_create([
+                SitePhotoRequirement(
+                    site=self.object, category=self.object.category,
+                    name=slot.name, order=slot.order,
+                )
+                for slot in category_slots
+            ])
         for uploaded_file in uploaded_files:
             SiteDocument.objects.create(site=self.object, file=uploaded_file)
         messages.success(self.request, "Объект сохранён.")
@@ -521,14 +738,47 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
             if self.request.user.is_staff and ctx["current_submission"]
             else self.object
         )
-        history = WorkSubmission.objects.filter(plan__site_id=self.object.site_id)
-        if not self.request.user.is_staff:
-            history = history.filter(plan__worker__user_id=self.request.user.id)
-        ctx["site_submission_history"] = history.select_related(
+        history = WorkSubmission.objects.filter(plan_id=self.object.pk).select_related(
             "plan__site", "plan__worker"
         ).prefetch_related(
-            "photos__category"
-        ).order_by("-created_at", "-pk")
+            "photos__category", "photos__photo_slot__category", "events", "office_notes",
+        ).order_by("created_at", "pk")
+        ctx["plan_submission_history"] = list(history)
+        ctx["plan_conversation_items"] = []
+        for submission in ctx["plan_submission_history"]:
+            photos = list(submission.photos.all())
+            events = list(submission.events.all())
+            items = []
+            if events:
+                for event in events:
+                    item = {
+                        "side": "worker" if event.event_type == WorkSubmissionEvent.Type.SUBMITTED else "boss",
+                        "sender": self.object.worker.name if event.event_type == WorkSubmissionEvent.Type.SUBMITTED else "Шеф",
+                        "text": event.text or event.get_event_type_display(),
+                        "created_at": event.created_at,
+                        "kind": event.event_type,
+                    }
+                    if event.event_type == WorkSubmissionEvent.Type.SUBMITTED:
+                        item["photos"] = photos
+                        item["task_description"] = self.object.description
+                    items.append(item)
+            else:
+                items.append({"side": "worker", "sender": self.object.worker.name,
+                              "text": "Отчёт отправлен на проверку.", "created_at": submission.created_at,
+                              "kind": "submitted", "photos": photos,
+                              "task_description": self.object.description})
+                status = submission.status or self.object.status
+                if submission.review_comment:
+                    items.append({"side": "boss", "sender": "Шеф", "text": submission.review_comment,
+                                  "created_at": None, "kind": status or "revision"})
+                elif status == WorkPlan.Status.APPROVED:
+                    items.append({"side": "boss", "sender": "Шеф", "text": "Отчёт принят.",
+                                  "created_at": None, "kind": "approved"})
+            for note in submission.office_notes.all():
+                items.append({"side": "boss", "sender": "Office", "text": note.text,
+                              "created_at": note.created_at, "kind": "note"})
+            items.sort(key=lambda item: item["created_at"] or submission.created_at)
+            ctx["plan_conversation_items"].extend(items)
         if (
             not self.request.user.is_staff
             and not ctx["future_locked"]
@@ -591,10 +841,10 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
             # A first-time submission is unsaved, so its reverse manager cannot
             # be queried until it has a primary key. Existing submissions can
             # still be inspected to remove replaced images after the update.
-            previous_files = {}
+            previous_photo_state = {}
             if submission.pk:
-                previous_files = {
-                    photo.pk: photo.image.name
+                previous_photo_state = {
+                    photo.pk: (photo.image.name, photo.location_latitude, photo.location_longitude)
                     for photo in submission.photos.all()
                     if photo.pk and photo.image
                 }
@@ -608,14 +858,43 @@ class WorkPlanDetailView(LoginRequiredMixin, DetailView):
                     status=WorkPlan.Status.SUBMITTED,
                     created_at=timezone.now(),
                 )
+                submission.refresh_from_db(fields=["created_at"])
+                WorkSubmissionEvent.objects.create(
+                    submission=submission,
+                    event_type=WorkSubmissionEvent.Type.SUBMITTED,
+                    text="Отчёт отправлен на проверку.",
+                    actor=request.user,
+                )
                 self.object.status = WorkPlan.Status.SUBMITTED
                 self.object.review_comment = ""
                 self.object.reviewed_at = None
                 self.object.save(update_fields=["status", "review_comment", "reviewed_at"])
             for photo in submission.photos.all():
-                old_name = previous_files.get(photo.pk)
-                if old_name and old_name != photo.image.name:
+                old_state = previous_photo_state.get(photo.pk)
+                if old_state and old_state[0] != photo.image.name:
+                    old_name = old_state[0]
                     default_storage.delete(old_name)
+                exif_location = photo_exif_location(photo)
+                if exif_location:
+                    exif_latitude, exif_longitude, exif_captured_at = exif_location
+                    photo.location_latitude = exif_latitude
+                    photo.location_longitude = exif_longitude
+                    photo.location_accuracy = None
+                    if exif_captured_at:
+                        photo.location_captured_at = exif_captured_at
+                    photo.save(update_fields=[
+                        "location_latitude", "location_longitude", "location_accuracy",
+                        "location_captured_at",
+                    ])
+                previous_location = old_state[1:] if old_state else (None, None)
+                current_location = (photo.location_latitude, photo.location_longitude)
+                if photo.location_latitude is None or photo.location_longitude is None:
+                    photo.location_address = ""
+                    photo.save(update_fields=["location_address"])
+                elif current_location != previous_location or not photo.location_address:
+                    photo.location_address = reverse_geocode_photo(*current_location)
+                    photo.save(update_fields=["location_address"])
+                create_stamped_photo(photo, submission)
             if is_resubmission:
                 messages.success(request, "Новая версия отчёта отправлена. Предыдущая версия и ответы шефа сохранены в истории.")
             elif is_editing_submission:
@@ -712,6 +991,9 @@ class SiteListView(StaffRequiredMixin, FilterView):
             work_plan_count=Count("work_plans", distinct=True),
             legacy_report_count=Count("reports", distinct=True),
             submission_count=Count("work_plans__submissions", distinct=True),
+            accepted_submission_count=Count("work_plans__submissions", filter=Q(work_plans__submissions__status=WorkPlan.Status.APPROVED), distinct=True),
+            pending_submission_count=Count("work_plans__submissions", filter=Q(work_plans__submissions__status=WorkPlan.Status.SUBMITTED), distinct=True),
+            rejected_submission_count=Count("work_plans__submissions", filter=Q(work_plans__submissions__status=WorkPlan.Status.REVISION), distinct=True),
             planned_plan_count=Count(
                 "work_plans", filter=Q(work_plans__status=WorkPlan.Status.PLANNED), distinct=True,
             ),
@@ -787,17 +1069,51 @@ class SiteDetailView(StaffRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         plans = self.object.work_plans.select_related("worker", "created_by").prefetch_related(
-            "documents", "submissions__photos__category"
+            "documents", "submissions__photos__category", "submissions__events", "submissions__office_notes"
         ).order_by("-work_date", "worker__name", "pk")
         ctx["plans"] = plans
         for plan in plans:
-            plan.submission_history = list(plan.submissions.all())
+            plan.submission_history = list(plan.submissions.order_by("created_at", "pk"))
+            plan.conversation_items = []
             for submission in plan.submission_history:
                 submission.effective_status = submission.status or plan.status
                 submission.effective_status_label = dict(WorkPlan.Status.choices).get(
                     submission.effective_status, "Статус не сохранён"
                 )
                 submission.photo_list = list(submission.photos.all())
+                events = list(submission.events.all())
+                items = []
+                if events:
+                    for event in events:
+                        item = {
+                            "side": "worker" if event.event_type == WorkSubmissionEvent.Type.SUBMITTED else "boss",
+                            "sender": plan.worker.name if event.event_type == WorkSubmissionEvent.Type.SUBMITTED else "Шеф",
+                            "text": event.text or event.get_event_type_display(),
+                            "created_at": event.created_at,
+                            "kind": event.event_type,
+                            "submission": submission,
+                        }
+                        if event.event_type == WorkSubmissionEvent.Type.SUBMITTED:
+                            item["photos"] = submission.photo_list
+                            item["task_description"] = plan.description
+                        items.append(item)
+                else:
+                    items.append({"side": "worker", "sender": plan.worker.name,
+                                  "text": "Отчёт отправлен на проверку.", "created_at": submission.created_at,
+                                  "kind": "submitted", "photos": submission.photo_list,
+                                  "task_description": plan.description, "submission": submission})
+                    if submission.review_comment:
+                        items.append({"side": "boss", "sender": "Шеф", "text": submission.review_comment,
+                                      "created_at": None, "kind": submission.effective_status or "revision",
+                                      "submission": submission})
+                    elif submission.effective_status == WorkPlan.Status.APPROVED:
+                        items.append({"side": "boss", "sender": "Шеф", "text": "Отчёт принят.",
+                                      "created_at": None, "kind": "approved", "submission": submission})
+                for note in submission.office_notes.all():
+                    items.append({"side": "boss", "sender": "Office", "text": note.text,
+                                  "created_at": note.created_at, "kind": "note", "submission": submission})
+                items.sort(key=lambda item: item["created_at"] or submission.created_at)
+                plan.conversation_items.extend(items)
         ctx["site_workers"] = Worker.objects.filter(
             Q(sites=self.object) | Q(work_plans__site=self.object)
         ).annotate(
@@ -851,6 +1167,45 @@ class SiteCreateView(SiteFormProcessMixin, StaffRequiredMixin, CreateView):
     template_name = "work/form.html"
     success_url = reverse_lazy("site_list")
     extra_context = {"title": "Новый объект", "back": "site_list"}
+
+
+class PhotoCategoryCreateView(StaffRequiredMixin, CreateView):
+    model = PhotoCategory
+    form_class = PhotoCategoryForm
+    template_name = "work/category_form.html"
+    success_url = reverse_lazy("site_create")
+
+    def get_photo_formset(self, data=None):
+        return PhotoCategoryPhotoFormSet(
+            data=data,
+            instance=getattr(self, "object", None) or PhotoCategory(),
+            prefix="slots",
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["photo_formset"] = getattr(self, "photo_formset", None) or self.get_photo_formset()
+        return ctx
+
+    def form_valid(self, form):
+        self.photo_formset = self.get_photo_formset(data=self.request.POST)
+        if not self.photo_formset.is_valid():
+            return self.form_invalid(form)
+        with transaction.atomic():
+            form.instance.is_active = True
+            self.object = form.save()
+            self.photo_formset.instance = self.object
+            self.photo_formset.save()
+            for order, slot in enumerate(self.object.photo_slots.order_by("pk")):
+                if slot.order != order:
+                    slot.order = order
+                    slot.save(update_fields=["order"])
+        messages.success(self.request, "Категория объекта создана. Теперь её можно выбрать при создании объекта.")
+        return redirect(self.get_success_url())
+
+    def form_invalid(self, form):
+        self.photo_formset = self.get_photo_formset(data=self.request.POST)
+        return super().form_invalid(form)
 
 
 class SiteUpdateView(SiteFormProcessMixin, StaffRequiredMixin, UpdateView):
@@ -1126,11 +1481,52 @@ class WorkSubmissionDetailView(StaffRequiredMixin, DetailView):
                 ctx["submission_status"], "Статус не сохранён"
             )
         ctx["office_notes"] = self.object.office_notes.all()
-        ctx["submission_history"] = WorkSubmission.objects.filter(
+        history = WorkSubmission.objects.filter(
             plan_id=self.object.plan_id
         ).select_related("plan__worker").prefetch_related(
-            "photos__category", "office_notes",
+            "photos__category", "office_notes", "events",
         ).order_by("created_at", "pk")
+        ctx["submission_history"] = history
+        conversation_items = []
+        for attempt in history:
+            chat_items = []
+            attempt_photos = list(attempt.photos.select_related("category", "photo_slot__category"))
+            events = list(attempt.events.all())
+            if events:
+                for event in events:
+                    item = {
+                        "side": "worker" if event.event_type == WorkSubmissionEvent.Type.SUBMITTED else "boss",
+                        "sender": attempt.plan.worker.name if event.event_type == WorkSubmissionEvent.Type.SUBMITTED else "Шеф",
+                        "text": event.text or event.get_event_type_display(),
+                        "created_at": event.created_at,
+                        "kind": event.event_type,
+                        "submission": attempt,
+                    }
+                    if event.event_type == WorkSubmissionEvent.Type.SUBMITTED:
+                        item["photos"] = attempt_photos
+                        item["task_description"] = attempt.plan.description
+                    chat_items.append(item)
+            else:
+                # Legacy submissions have no recorded decision timestamp; show only known timestamps.
+                chat_items.append({"side": "worker", "sender": attempt.plan.worker.name,
+                                   "text": "Отчёт отправлен на проверку.", "created_at": attempt.created_at,
+                                   "kind": "submitted", "photos": attempt_photos,
+                                   "task_description": attempt.plan.description, "submission": attempt})
+                if attempt.review_comment:
+                    chat_items.append({"side": "boss", "sender": "Шеф", "text": attempt.review_comment,
+                                       "created_at": None, "kind": attempt.status or "revision", "submission": attempt})
+                elif attempt.status == WorkPlan.Status.APPROVED:
+                    chat_items.append({"side": "boss", "sender": "Шеф", "text": "Отчёт принят.",
+                                       "created_at": None, "kind": "approved", "submission": attempt})
+            for note in attempt.office_notes.all():
+                chat_items.append({"side": "boss", "sender": "Office", "text": note.text,
+                                   "created_at": note.created_at, "kind": "note", "submission": attempt})
+            attempt.chat_items = sorted(chat_items, key=lambda item: item["created_at"] or attempt.created_at)
+            conversation_items.extend(attempt.chat_items)
+        # Keep each attempt's worker message and its reply together. Legacy replies
+        # have no stored timestamp, so sorting them globally would move them away
+        # from the submission they answer.
+        ctx["conversation_items"] = conversation_items
         photos = list(self.object.photos.select_related("category", "photo_slot__category"))
         requirements = list(self.object.plan.site.photo_requirements.select_related("category"))
         grouped_photos = []
@@ -1193,6 +1589,8 @@ class WorkSubmissionDetailView(StaffRequiredMixin, DetailView):
                 latest_submission.status = WorkPlan.Status.APPROVED
                 latest_submission.review_comment = ""
                 latest_submission.save(update_fields=["status", "review_comment"])
+                WorkSubmissionEvent.objects.create(submission=latest_submission, event_type=WorkSubmissionEvent.Type.APPROVED,
+                                                   text="Отчёт принят.", actor=request.user)
                 messages.success(request, "Отчёт одобрен.")
             elif action == "revision" and plan.status == WorkPlan.Status.SUBMITTED:
                 if not comment:
@@ -1205,6 +1603,8 @@ class WorkSubmissionDetailView(StaffRequiredMixin, DetailView):
                     latest_submission.status = WorkPlan.Status.REVISION
                     latest_submission.review_comment = comment
                     latest_submission.save(update_fields=["status", "review_comment"])
+                    WorkSubmissionEvent.objects.create(submission=latest_submission, event_type=WorkSubmissionEvent.Type.REVISION,
+                                                       text=comment, actor=request.user)
                     messages.success(request, "Отчёт отклонён и отправлен на доработку.")
             elif action == "reopen" and plan.status == WorkPlan.Status.APPROVED:
                 plan.status = WorkPlan.Status.SUBMITTED
@@ -1214,6 +1614,8 @@ class WorkSubmissionDetailView(StaffRequiredMixin, DetailView):
                 latest_submission.status = WorkPlan.Status.SUBMITTED
                 latest_submission.review_comment = ""
                 latest_submission.save(update_fields=["status", "review_comment"])
+                WorkSubmissionEvent.objects.create(submission=latest_submission, event_type=WorkSubmissionEvent.Type.REOPENED,
+                                                   text="Отчёт возвращён на проверку.", actor=request.user)
                 messages.success(request, "Отчёт снова ожидает рассмотрения.")
             else:
                 messages.error(request, "Это действие недоступно для текущего статуса отчёта.")
@@ -1253,7 +1655,7 @@ def _submission_report_entries(submissions):
         if not latest_photos:
             continue
         description = "\n".join(
-            f"{photo.category.name}: {photo.description}" if photo.category else photo.description
+            f"{photo.photo_slot.name if photo.photo_slot_id else photo.category.name}: {photo.description}" if photo.category else photo.description
             for photo in latest_photos
         )
         entries.append(SimpleNamespace(

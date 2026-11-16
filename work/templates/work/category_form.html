@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Новая категория объекта{% endblock %}
+{% block heading %}Новая категория объекта{% endblock %}
+{% block content %}
+<div class="card form-card">
+  <p class="muted">Создайте тип объекта и добавьте обязательные фотополя. Для каждого задайте отдельное понятное название; количество полей не ограничено.</p>
+  <form method="post" id="category-form" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {{ form.as_div }}
+    <section class="form-section">
+      <h2>Обязательные фотографии</h2>
+      {{ photo_formset.management_form }}
+      {{ photo_formset.non_form_errors }}
+      <div id="category-photo-slots">
+        {% for slot_form in photo_formset %}
+          <div class="category-photo-row">
+            {{ slot_form.id }}
+            <div>{{ slot_form.name.label_tag }}{{ slot_form.name }}{{ slot_form.name.errors }}</div>
+            <span hidden>{{ slot_form.DELETE }}</span>
+            <button type="button" class="btn btn-danger btn-sm remove-category-photo">Убрать фото</button>
+          </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="btn btn-light btn-sm" id="add-category-photo">＋ Добавить обязательное фото</button>
+      <small class="muted" id="category-photo-count"></small>
+      <div id="empty-category-photo-form" hidden>
+        <div class="category-photo-row">
+          {{ photo_formset.empty_form.id }}
+          <div>{{ photo_formset.empty_form.name.label_tag }}{{ photo_formset.empty_form.name }}{{ photo_formset.empty_form.name.errors }}</div>
+          <span hidden>{{ photo_formset.empty_form.DELETE }}</span>
+          <button type="button" class="btn btn-danger btn-sm remove-category-photo">Убрать фото</button>
+        </div>
+      </div>
+    </section>
+    <button type="submit" class="btn">Создать категорию</button>
+    <a class="btn btn-light" href="{% url 'site_list' %}">Отмена</a>
+  </form>
+</div>
+{% endblock %}

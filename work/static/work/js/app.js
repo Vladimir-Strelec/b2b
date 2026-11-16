@@ -14,6 +14,27 @@
   }, { passive: true });
 })();
 
+// Open report photos in a page-sized viewer instead of navigating away.
+(function () {
+  var dialog = document.getElementById("photo-lightbox");
+  if (!dialog || typeof dialog.showModal !== "function") return;
+  var image = dialog.querySelector("img");
+  var closeButton = dialog.querySelector(".photo-lightbox-close");
+  document.querySelectorAll("[data-photo-lightbox]").forEach(function (link) {
+    link.addEventListener("click", function (event) {
+      event.preventDefault();
+      image.src = link.href;
+      image.alt = link.querySelector("img")?.alt || "Увеличенная фотография";
+      dialog.showModal();
+    });
+  });
+  closeButton.addEventListener("click", function () { dialog.close(); });
+  dialog.addEventListener("click", function (event) {
+    if (event.target === dialog) dialog.close();
+  });
+  dialog.addEventListener("close", function () { image.removeAttribute("src"); });
+})();
+
 // Описание под каждым фото растёт по мере ввода текста.
 (function () {
   document.querySelectorAll(".photo-description-input").forEach(function (field) {
@@ -49,11 +70,38 @@
   document.querySelectorAll(".photo-file-input").forEach(function (field) {
     field.addEventListener("change", function () {
       var area = field.parentElement;
+      var entry = field.closest(".photo-entry");
       var label = area.querySelector(".photo-upload-control");
       var filename = area.querySelector(".photo-upload-filename");
       var preview = area.querySelector(".photo-upload-preview");
       var camera = area.querySelector(".photo-camera-icon");
       if (!label || !filename || !preview || !camera) return;
+      var latitude = entry && entry.querySelector(".photo-location-latitude");
+      var longitude = entry && entry.querySelector(".photo-location-longitude");
+      var accuracy = entry && entry.querySelector(".photo-location-accuracy");
+      var capturedAt = entry && entry.querySelector(".photo-location-captured-at");
+      var locationStatus = entry && entry.querySelector(".photo-location-status");
+      var submissionForm = field.closest("#submission-form");
+      var submitButton = submissionForm && submissionForm.querySelector('button[type="submit"]');
+      function updatePendingState() {
+        if (!submitButton || !submissionForm) return;
+        var pending = submissionForm.querySelector('.photo-entry[data-location-pending="true"]');
+        if (pending) {
+          if (!submitButton.dataset.originalText) submitButton.dataset.originalText = submitButton.textContent;
+          submitButton.disabled = true;
+          submitButton.textContent = "Определяем место для фото…";
+        } else if (submitButton.dataset.originalText) {
+          submitButton.disabled = false;
+          submitButton.textContent = submitButton.dataset.originalText;
+          delete submitButton.dataset.originalText;
+        }
+      }
+      function clearPhotoLocation() {
+        if (latitude) latitude.value = "";
+        if (longitude) longitude.value = "";
+        if (accuracy) accuracy.value = "";
+        if (capturedAt) capturedAt.value = "";
+      }
       if (field.files && field.files.length) {
         var photo = field.files[0];
         if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
@@ -64,6 +112,29 @@
         label.querySelector(".photo-upload-title").textContent = "Заменить фотографию";
         filename.textContent = photo.name;
         label.classList.add("has-file");
+        clearPhotoLocation();
+        if (entry) entry.dataset.hasSavedImage = "false";
+        if (locationStatus && navigator.geolocation && latitude && longitude) {
+          entry.dataset.locationPending = "true";
+          locationStatus.textContent = "Определяем местоположение именно для этого фото…";
+          updatePendingState();
+          navigator.geolocation.getCurrentPosition(function (position) {
+            latitude.value = position.coords.latitude.toFixed(6);
+            longitude.value = position.coords.longitude.toFixed(6);
+            if (accuracy) accuracy.value = Math.max(0, position.coords.accuracy).toFixed(2);
+            if (capturedAt) capturedAt.value = new Date(position.timestamp || Date.now()).toISOString();
+            locationStatus.textContent = "Место этого фото сохранено · точность примерно ±" + Math.round(position.coords.accuracy) + " м";
+            delete entry.dataset.locationPending;
+            updatePendingState();
+          }, function () {
+            clearPhotoLocation();
+            locationStatus.textContent = "Геолокация устройства недоступна. Если снимок содержит GPS-метаданные, будет использована точка из фото.";
+            delete entry.dataset.locationPending;
+            updatePendingState();
+          }, {enableHighAccuracy: true, timeout: 12000, maximumAge: 0});
+        } else if (locationStatus) {
+          locationStatus.textContent = "Геолокация недоступна в этом браузере. Если снимок содержит GPS-метаданные, будет использована точка из фото.";
+        }
       } else {
         if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
         delete preview.dataset.objectUrl;
@@ -73,6 +144,13 @@
         label.querySelector(".photo-upload-title").textContent = "Добавить фотографию";
         filename.textContent = "Нажмите, чтобы выбрать файл";
         label.classList.remove("has-file");
+        clearPhotoLocation();
+        if (entry) {
+          delete entry.dataset.hasSavedImage;
+          delete entry.dataset.locationPending;
+        }
+        if (locationStatus) locationStatus.textContent = "Местоположение будет определено отдельно для этого фото.";
+        updatePendingState();
       }
     });
   });
@@ -118,6 +196,10 @@
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     clearErrors();
+    if (form.querySelector('.photo-entry[data-location-pending="true"]')) {
+      showFeedback("Подождите, пока будет определено местоположение выбранных фотографий.");
+      return;
+    }
     var invalid = [];
     form.querySelectorAll(".photo-entry").forEach(function (entry) {
       var image = entry.querySelector(".photo-file-input");
@@ -140,67 +222,71 @@
 
     var submitButton = form.querySelector('button[type="submit"]');
     var originalLabel = submitButton ? submitButton.textContent : "";
-    if (submitButton) {
-      submitButton.disabled = true;
-      submitButton.textContent = "Отправка…";
-    }
-    fetch(form.action || window.location.href, {
-      method: "POST",
-      body: new FormData(form),
-      credentials: "same-origin",
-      headers: {"X-Requested-With": "XMLHttpRequest"}
-    }).then(function (response) {
-      if (response.redirected) {
-        window.location.assign(response.url);
-        return null;
+    function sendSubmission() {
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Отправка…";
       }
-      return response.text();
-    }).then(function (html) {
-      if (html === null) return;
-      var parsed = new DOMParser().parseFromString(html, "text/html");
-      var returnedForm = parsed.getElementById("submission-form");
-      if (!returnedForm) {
-        showFeedback("Отчёт не отправлен. Проверьте соединение и попробуйте ещё раз.");
-        return;
-      }
-      var globalErrors = [];
-      returnedForm.querySelectorAll(".errorlist").forEach(function (list) {
-        var messages = Array.from(list.querySelectorAll("li")).map(function (li) { return li.textContent.trim(); }).filter(Boolean);
-        if (!messages.length) return;
-        var fieldName = null;
-        if (!list.classList.contains("nonfield") && !list.classList.contains("nonform")) {
-          var parent = list.parentElement;
-          while (parent && parent !== returnedForm) {
-            var controls = parent.querySelectorAll('input[name], select[name], textarea[name]');
-            if (controls.length === 1) {
-              fieldName = controls[0].name;
-              break;
-            }
-            parent = parent.parentElement;
-          }
+      fetch(form.action || window.location.href, {
+        method: "POST",
+        body: new FormData(form),
+        credentials: "same-origin",
+        headers: {"X-Requested-With": "XMLHttpRequest"}
+      }).then(function (response) {
+        if (response.redirected) {
+          window.location.assign(response.url);
+          return null;
         }
-        if (fieldName) {
-          var currentField = Array.from(form.querySelectorAll('[name]')).find(function (field) { return field.name === fieldName; });
-          messages.forEach(function (message) { markInvalid(currentField, message); });
-        } else {
-          globalErrors = globalErrors.concat(messages);
+        return response.text();
+      }).then(function (html) {
+        if (html === null) return;
+        var parsed = new DOMParser().parseFromString(html, "text/html");
+        var returnedForm = parsed.getElementById("submission-form");
+        if (!returnedForm) {
+          showFeedback("Отчёт не отправлен. Проверьте соединение и попробуйте ещё раз.");
+          return;
+        }
+        var globalErrors = [];
+        returnedForm.querySelectorAll(".errorlist").forEach(function (list) {
+          var messages = Array.from(list.querySelectorAll("li")).map(function (li) { return li.textContent.trim(); }).filter(Boolean);
+          if (!messages.length) return;
+          var fieldName = null;
+          if (!list.classList.contains("nonfield") && !list.classList.contains("nonform")) {
+            var parent = list.parentElement;
+            while (parent && parent !== returnedForm) {
+              var controls = parent.querySelectorAll('input[name], select[name], textarea[name]');
+              if (controls.length === 1) {
+                fieldName = controls[0].name;
+                break;
+              }
+              parent = parent.parentElement;
+            }
+          }
+          if (fieldName) {
+            var currentField = Array.from(form.querySelectorAll('[name]')).find(function (field) { return field.name === fieldName; });
+            messages.forEach(function (message) { markInvalid(currentField, message); });
+          } else {
+            globalErrors = globalErrors.concat(messages);
+          }
+        });
+        globalErrors = Array.from(new Set(globalErrors));
+        showFeedback(globalErrors.length ? globalErrors.join(" ") : "Отчёт не отправлен. Проверьте выделенные поля.");
+        var firstInvalid = form.querySelector(".is-invalid");
+        if (firstInvalid) {
+          firstInvalid.scrollIntoView({behavior: "smooth", block: "center"});
+          firstInvalid.focus({preventScroll: true});
+        }
+      }).catch(function () {
+        showFeedback("Не удалось отправить отчёт. Проверьте соединение; выбранные фото и описания сохранены.");
+      }).finally(function () {
+        if (submitButton && document.body.contains(submitButton)) {
+          submitButton.disabled = false;
+          submitButton.textContent = originalLabel;
         }
       });
-      globalErrors = Array.from(new Set(globalErrors));
-      showFeedback(globalErrors.length ? globalErrors.join(" ") : "Отчёт не отправлен. Проверьте выделенные поля.");
-      var firstInvalid = form.querySelector(".is-invalid");
-      if (firstInvalid) {
-        firstInvalid.scrollIntoView({behavior: "smooth", block: "center"});
-        firstInvalid.focus({preventScroll: true});
-      }
-    }).catch(function () {
-      showFeedback("Не удалось отправить отчёт. Проверьте соединение; выбранные фото и описания сохранены.");
-    }).finally(function () {
-      if (submitButton && document.body.contains(submitButton)) {
-        submitButton.disabled = false;
-        submitButton.textContent = originalLabel;
-      }
-    });
+    }
+
+    sendSubmission();
   });
 })();
 
@@ -662,7 +748,7 @@
       [form.elements.object_number, "Введите номер объекта."],
       [form.elements.name, "Введите название объекта."],
       [form.elements.address, "Введите адрес объекта."],
-      [form.elements.site_type, "Выберите тип объекта."],
+      [form.elements.category, "Выберите тип объекта из созданных категорий."],
     ].forEach(function (item) {
       if (item[0] && !String(item[0].value).trim()) {
         markInvalid(item[0], item[1]);
@@ -697,20 +783,13 @@
       var existingCount = Number(docList.dataset.existingCount || 0);
       if (!existingCount && !selectedFiles.length) {
         var firstFile = fileInputs[0];
-        markInvalid(firstFile, "Прикрепите хотя бы один файл PDF или Excel.");
+        markInvalid(firstFile, "Прикрепите хотя бы один документ.");
         invalid.push(firstFile);
       }
       if (existingCount + selectedFiles.length > 20) {
         markInvalid(fileInputs[0], "Можно прикрепить не более 20 файлов.");
         invalid.push(fileInputs[0]);
       }
-      selectedFiles.forEach(function (file) {
-        if (!/\.(pdf|xls|xlsx)$/i.test(file.name)) {
-          var field = fileInputs.find(function (input) { return Array.from(input.files || []).includes(file); });
-          markInvalid(field, "Поддерживаются только PDF и Excel (.xls, .xlsx).");
-          invalid.push(field);
-        }
-      });
     }
 
     if (invalid.length) {
@@ -718,6 +797,21 @@
       invalid[0].scrollIntoView({behavior: "smooth", block: "center"});
       invalid[0].focus({preventScroll: true});
       return;
+    }
+
+    var requiresPermit = form.elements.requires_work_permit;
+    var hasPermit = form.elements.has_work_permit;
+    if (requiresPermit && requiresPermit.checked && hasPermit && hasPermit.checked) {
+      var permitFrom = form.elements.permit_valid_from;
+      var permitUntil = form.elements.permit_valid_until;
+      if (!permitFrom.value || !permitUntil.value || permitUntil.value < permitFrom.value) {
+        showFeedback("Укажите корректные даты действия VAO: от и до.");
+        var invalidDate = !permitFrom.value ? permitFrom : permitUntil;
+        markInvalid(invalidDate, "Укажите даты VAO в правильном порядке.");
+        invalidDate.scrollIntoView({behavior: "smooth", block: "center"});
+        invalidDate.focus({preventScroll: true});
+        return;
+      }
     }
 
     var submitButton = form.querySelector('button[type="submit"]');
@@ -786,6 +880,80 @@
   });
 })();
 
+// Show VAO receipt and validity dates only when the object requires a permit.
+(function () {
+  var form = document.getElementById("site-form");
+  if (!form) return;
+  var required = form.elements.requires_work_permit;
+  var received = form.elements.has_work_permit;
+  var from = form.elements.permit_valid_from;
+  var until = form.elements.permit_valid_until;
+  if (!required || !received || !from || !until) return;
+
+  var receivedRow = received.parentElement;
+  var fromRow = from.parentElement;
+  var untilRow = until.parentElement;
+  function refresh() {
+    var needsPermit = required.checked;
+    receivedRow.hidden = !needsPermit;
+    fromRow.hidden = !needsPermit || !received.checked;
+    untilRow.hidden = !needsPermit || !received.checked;
+    from.required = needsPermit && received.checked;
+    until.required = needsPermit && received.checked;
+    if (!needsPermit) {
+      received.checked = false;
+      from.value = "";
+      until.value = "";
+    } else if (!received.checked) {
+      from.value = "";
+      until.value = "";
+    }
+  }
+  required.addEventListener("change", refresh);
+  received.addEventListener("change", refresh);
+  refresh();
+})();
+
+// Add as many named photo requirements as a category needs.
+(function () {
+  var add = document.getElementById("add-category-photo");
+  if (!add) return;
+  var list = document.getElementById("category-photo-slots");
+  var total = document.getElementById("id_slots-TOTAL_FORMS");
+  var count = document.getElementById("category-photo-count");
+  var empty = document.getElementById("empty-category-photo-form");
+  function updateCount() {
+    var activeRows = Array.from(list.querySelectorAll(".category-photo-row")).filter(function (row) {
+      var deleted = row.querySelector('input[name$="-DELETE"]');
+      return !row.hidden && (!deleted || !deleted.checked);
+    });
+    count.textContent = "Обязательных фото: " + activeRows.length;
+  }
+  add.addEventListener("click", function () {
+    var index = Number(total.value);
+    var wrapper = document.createElement("div");
+    wrapper.innerHTML = empty.innerHTML.replace(/__prefix__/g, index);
+    var row = wrapper.firstElementChild;
+    list.appendChild(row);
+    total.value = index + 1;
+    updateCount();
+    var field = row.querySelector('input[name$="-name"]');
+    if (field) field.focus();
+  });
+  list.addEventListener("click", function (event) {
+    if (!event.target.classList.contains("remove-category-photo")) return;
+    var row = event.target.closest(".category-photo-row");
+    var deleted = row.querySelector('input[name$="-DELETE"]');
+    if (deleted) deleted.checked = true;
+    row.querySelectorAll("input, select, textarea").forEach(function (field) {
+      if (field !== deleted) field.required = false;
+    });
+    row.hidden = true;
+    updateCount();
+  });
+  updateCount();
+})();
+
 // Dynamic document and photo rows.
 (function () {
   var docButton = document.getElementById("add-document");
@@ -820,7 +988,6 @@
       var input = document.createElement("input");
       input.type = "file";
       input.name = "documents";
-      input.accept = "application/pdf,.pdf";
       label.appendChild(input);
       var filename = document.createElement("span");
       filename.className = "file-name muted";

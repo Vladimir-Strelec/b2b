@@ -39,22 +39,24 @@
       {% for site in object_list %}
         <tr>
           <td data-object-number="{{ site.object_number }}">{{ site.object_number|default:"—" }}</td>
-          <td><a class="link" href="{% url 'site_detail' site.pk %}"><b>{{ site.name }}</b></a></td>
-          <td>{{ site.get_site_type_display }}</td>
+          <td><a class="link" href="{% url 'site_detail' site.pk %}"><b>{{ site.name }}</b></a><div class="muted">{% if not site.requires_work_permit %}VAO не требуется{% elif site.has_work_permit and site.permit_valid_until %}VAO до {{ site.permit_valid_until|date:"d.m.Y" }}{% else %}Ожидает VAO{% endif %}</div></td>
+          <td>{{ site.category.name|default:"—" }}</td>
           <td data-address="{{ site.address }}">{{ site.address }}</td>
-          <td>{% if site.is_completed %}<span class="status status-approved">✓ Завершён</span>{% elif site.latest_plan_status == "approved" %}<span class="status status-approved">✓ Отчёты приняты</span>{% elif site.latest_plan_status == "revision" %}<span class="status status-revision">✕ Отказано</span>{% elif site.latest_plan_status == "submitted" %}<span class="status status-submitted">! На проверке</span>{% elif site.latest_plan_status == "planned" %}<span class="status status-planned">! Запланирован</span>{% else %}<span class="muted">— Без плана</span>{% endif %}</td>
-          <td><span class="badge">{{ site.legacy_report_count|add:site.submission_count }}</span></td>
+          <td>{% if site.is_completed or site.latest_plan_status == "approved" %}<span class="status status-approved">✓ План выполнен</span>{% elif site.latest_plan_status %}<span class="status status-submitted">! Ведутся работы</span>{% else %}<span class="muted">— План не назначен</span>{% endif %}</td>
+          <td><span class="badge">{{ site.legacy_report_count|add:site.submission_count }}</span> {% if site.latest_plan_status == "approved" %}<span class="status status-approved">Принято</span>{% elif site.latest_plan_status == "submitted" %}<span class="status status-submitted">В обработке</span>{% elif site.latest_plan_status == "revision" %}<span class="status status-revision">Отказано</span>{% elif site.legacy_report_count %}<span class="muted">Отчёты</span>{% else %}<span class="muted">—</span>{% endif %}</td>
           <td class="nowrap">
             <div class="actions">
-              <a class="btn btn-sm" href="{% url 'site_detail' site.pk %}">Открыть</a>
-              {% if completed_only %}
+              {% if site.is_completed %}
+                <span class="status status-approved">✓ Завершён</span>
                 <form method="post" action="{% url 'site_revert_completion' site.pk %}">
                   {% csrf_token %}
-                  <button class="btn btn-light btn-sm" type="submit">Вернуть в объекты</button>
+                  <button class="btn btn-light btn-sm" type="submit">Отменить завершение</button>
                 </form>
+              {% elif completed_only %}
+                <span class="status status-approved">✓ Завершён</span>
               {% else %}
+                <a class="btn btn-sm" href="{% url 'site_detail' site.pk %}">Открыть</a>
                 <a class="btn btn-light btn-sm" href="{% url 'site_edit' site.pk %}">Изменить</a>
-                <a class="btn btn-danger btn-sm" href="{% url 'site_delete' site.pk %}">Удалить</a>
               {% endif %}
             </div>
           </td>

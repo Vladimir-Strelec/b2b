@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Вход{% endblock %}
 {% block auth %}
-  <div class="card">
-    <h1>Вход</h1>
-    <form method="post">
-      {% csrf_token %}
-      {{ form.as_div }}
-      <input type="hidden" name="next" value="{{ next }}">
-      <p><button type="submit" class="btn" style="width:100%">Войти</button></p>
-    </form>
-  </div>
+<form method="post" class="card login-card">
+  {% csrf_token %}
+  <h1>Вход в систему</h1>
+  {% if form.errors %}<p class="alert alert-error">Неверное имя пользователя или пароль.</p>{% endif %}
+  {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+  <label for="id_username">Имя пользователя</label>
+  <input id="id_username" name="username" type="text" autocomplete="username" required autofocus>
+  <label for="id_password">Пароль</label>
+  <input id="id_password" name="password" type="password" autocomplete="current-password" required>
+  <button class="btn" type="submit">Войти</button>
+</form>
 {% endblock %}

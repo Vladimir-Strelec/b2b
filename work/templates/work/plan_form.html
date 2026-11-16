@@ -3,6 +3,9 @@
 {% block heading %}{% if editing %}Редактировать план{% else %}Новый план работы{% endif %}{% endblock %}
 {% block content %}
 <div class="card form-card">
+  {% if sites_without_permit %}
+    <div class="alert">Этим объектам требуется VAO, но оно ещё не получено или сейчас не действует. План можно назначить только внутри указанного срока: {% for site in sites_without_permit %}{{ site.name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</div>
+  {% endif %}
   <form method="post" id="plan-form">
     {% csrf_token %}
     {{ form.non_field_errors }}

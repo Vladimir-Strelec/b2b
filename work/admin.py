@@ -2,7 +2,7 @@ from django import forms
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 
-from .models import Report, Site, Worker, WorkPlan, PlanDocument, PhotoCategory, WorkSubmission, WorkPhoto
+from .models import Report, Site, Worker, WorkPlan, PlanDocument, PhotoCategory, PhotoCategoryPhoto, WorkSubmission, WorkPhoto
 
 User = get_user_model()
 
@@ -52,7 +52,7 @@ class WorkerAdmin(admin.ModelAdmin):
 
 @admin.register(Site)
 class SiteAdmin(admin.ModelAdmin):
-    list_display = ("name", "address", "site_type")
+    list_display = ("name", "address", "category", "requires_work_permit", "has_work_permit", "permit_valid_until")
     list_filter = ("workers",)
     search_fields = ("name", "address")
     filter_horizontal = ("workers",)
@@ -81,6 +81,14 @@ class WorkPlanAdmin(admin.ModelAdmin):
 class PhotoCategoryAdmin(admin.ModelAdmin):
     list_display = ("name", "is_active", "order")
     list_editable = ("is_active", "order")
+
+    class PhotoCategoryPhotoInline(admin.TabularInline):
+        model = PhotoCategoryPhoto
+        extra = 1
+        min_num = 1
+        validate_min = True
+
+    inlines = (PhotoCategoryPhotoInline,)
 
 
 class WorkPhotoInline(admin.TabularInline):

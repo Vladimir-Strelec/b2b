@@ -3,7 +3,7 @@
 {% block heading %}{{ object.name }}{% endblock %}
 {% block content %}
   <div class="detail-head site-detail-head">
-    <div class="muted">№ {{ object.object_number|default:"—" }} · Тип {{ object.get_site_type_display }} · {{ object.address }}</div>
+    <div class="muted">№ {{ object.object_number|default:"—" }} · Тип {{ object.category.name|default:"—" }} · {{ object.address }}</div>
     <div class="actions">
       <a class="btn btn-light btn-sm" href="{% url 'site_list' %}">← Все объекты</a>
       {% if object.is_completed %}
@@ -20,36 +20,38 @@
 
   <div class="site-detail-grid">
     <section class="card site-main-info">
-      <h2>Основная информация</h2>
+      <h2 class="site-section-title"><svg class="mono-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5zM8 9h8M8 13h8M8 17h5"/></svg><span><span class="heading-muted">Основная</span> информация</span></h2>
       <dl class="site-info-list">
         <dt>Название</dt><dd>{{ object.name }}</dd>
         <dt>Номер объекта</dt><dd>{{ object.object_number|default:"Не указан" }}</dd>
         <dt>Адрес</dt><dd>{{ object.address }}</dd>
-        <dt>Тип</dt><dd>{{ object.get_site_type_display }}</dd>
+        <dt>Тип</dt><dd>{{ object.category.name|default:"—" }}</dd>
+        <dt>Обязательные фотополя</dt><dd>{{ object.photo_requirements.count }}</dd>
+        <dt>VAO</dt><dd>{% if not object.requires_work_permit %}Для работ не требуется{% elif object.has_work_permit and object.permit_valid_from and object.permit_valid_until %}Получено · с {{ object.permit_valid_from|date:"d.m.Y" }} по {{ object.permit_valid_until|date:"d.m.Y" }}{% elif object.has_work_permit %}<span class="status status-revision">Получено, срок не указан</span>{% else %}<span class="status status-revision">Требуется, ещё не получено</span>{% endif %}</dd>
         <dt>Состояние объекта</dt><dd>{% if object.is_completed %}<span class="status status-approved">Завершён</span>{% elif plans %}<span class="status status-planned">Ведутся работы</span>{% else %}<span class="status">Ожидает назначения работ</span>{% endif %}</dd>
       </dl>
 
       <div class="site-info-subsection">
-        <h3>Требуемые фото <span class="badge">{{ photo_requirements|length }}</span></h3>
+        <h3 class="site-section-title"><svg class="mono-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5zM8 15l2.5-3 2 2 2.5-3 3 4M8 8h.01"/></svg><span><span class="heading-muted">Требуемые</span> фото</span><span class="badge">{{ photo_requirements|length }}</span></h3>
         <ul class="site-requirement-list">
           {% for requirement in photo_requirements %}
-            <li><span>{{ requirement.category.name }}</span><span class="status status-{% if requirement.progress_status == 'missing' %}planned{% else %}{{ requirement.progress_status }}{% endif %}">{{ requirement.progress_label }}</span></li>
+            <li><span>{{ requirement.name }}</span><span class="status status-{% if requirement.progress_status == 'missing' %}planned{% else %}{{ requirement.progress_status }}{% endif %}">{{ requirement.progress_label }}</span></li>
           {% empty %}<li class="muted">Требуемые фото не настроены.</li>{% endfor %}
         </ul>
       </div>
 
       <div class="site-info-subsection">
-        <h3>Документы объекта <span class="badge">{{ object.documents.count }}</span></h3>
+        <h3 class="site-section-title"><svg class="mono-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4v13H6zM14 4v4h4M9 12h6M9 16h6"/></svg><span><span class="heading-muted">Документы</span> объекта</span><span class="badge">{{ object.documents.count }}</span></h3>
         <ul class="document-list">
           {% for doc in object.documents.all %}
-            <li><a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"sites/" }}</a></li>
+            <li><svg class="mono-icon document-icon" viewBox="0 0 24 24" aria-label="Документ"><path d="M6 3.5h8l4 4v13H6zM14 4v4h4M9 12h6M9 16h6"/></svg><a class="link" href="{{ doc.file.url }}" target="_blank" rel="noopener">{{ doc.file.name|cut:"sites/" }}</a><span class="document-type">{{ doc.file.name|slice:"-4:"|upper }}</span></li>
           {% empty %}<li class="muted">Документы не добавлены.</li>{% endfor %}
         </ul>
       </div>
     </section>
 
     <section class="card site-related-info">
-      <h2>Работники <span class="badge">{{ site_workers|length }}</span></h2>
+      <h2 class="site-section-title"><svg class="mono-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20v-1.5A5.5 5.5 0 0 1 8 13h2a5.5 5.5 0 0 1 5.5 5.5V20zM16 4.8a3.5 3.5 0 0 1 0 6.4M18 14a4.5 4.5 0 0 1 3.5 4.4V20"/></svg><span><span class="heading-muted">Работники</span></span><span class="badge">{{ site_workers|length }}</span></h2>
       <ul class="site-worker-list">
         {% for worker in site_workers %}
           <li>
@@ -60,7 +62,7 @@
       </ul>
 
       <div class="site-info-subsection">
-        <h3>Отчёты <span class="badge">{{ report_total }}</span></h3>
+        <h3 class="site-section-title"><svg class="mono-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4v13H6zM14 4v4h4M9 12h6M9 16h6"/></svg><span><span class="heading-muted">Отчёты</span></span><span class="badge">{{ report_total }}</span></h3>
         <div class="site-report-list">
           {% for report in reports %}
             <article class="site-report-entry">
@@ -81,13 +83,13 @@
 
   <section class="card site-plan-history">
     <header class="section-heading">
-      <div><div class="eyebrow">Работы на объекте</div><h2>Планы и история отправок</h2></div>
+      <div><div class="eyebrow">Работы на объекте</div><h2 class="site-section-title"><svg class="mono-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg><span><span class="heading-muted">Планы</span> и история отправок</span></h2></div>
       <span class="badge">{{ plans|length }} планов</span>
     </header>
     {% for plan in plans %}
       <article class="site-plan-entry">
         <header class="site-plan-header">
-          <div><h3>{{ plan.work_date|date:"d.m.Y" }} · {{ plan.worker.name }}</h3><div class="muted">План № {{ plan.pk }} · создан {{ plan.created_at|date:"d.m.Y H:i" }}{% if plan.created_by %} · автор: {{ plan.created_by }}{% endif %}</div></div>
+          <div><h3><svg class="mono-icon inline-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>План задания на объект</h3><div class="muted">{{ plan.work_date|date:"d.m.Y" }} · работник: {{ plan.worker.name }} · создан {{ plan.created_at|date:"d.m.Y H:i" }}{% if plan.created_by %} · автор: {{ plan.created_by }}{% endif %}</div></div>
           <span class="status status-{{ plan.status }}">План: {{ plan.get_status_display }}</span>
         </header>
         <div class="site-plan-description"><h4>Задание</h4><p>{{ plan.description|linebreaksbr }}</p></div>
@@ -98,30 +100,36 @@
           </div>
         {% endif %}
 
-        <div class="site-submission-history">
-          <h4>История отправок <span class="badge">{{ plan.submission_history|length }}</span></h4>
-          {% for submission in plan.submission_history %}
-            <section class="site-submission-entry">
-              <header><div><b>Отчёт отправлен {{ submission.created_at|date:"d.m.Y H:i" }}</b><div class="muted">Отправка № {{ submission.pk }}</div></div><span class="status status-{{ submission.effective_status }}">{{ submission.effective_status_label }}</span></header>
-              {% if submission.review_comment %}<p class="site-review-comment"><b>Комментарий к отчёту:</b> {{ submission.review_comment|linebreaksbr }}</p>{% endif %}
-              <div class="site-submission-photos">
-                {% for photo in submission.photo_list %}
-                  <article class="site-submission-photo-card">
-                    <details class="site-photo-detail">
-                      <summary>
-                        <b>{{ photo.category.name|default:"Фото" }}</b>
-                        <span class="site-photo-preview">{{ photo.description|default:"Описание не добавлено."|truncatechars:110 }}</span>
-                      </summary>
-                      <div class="site-photo-full-description">{{ photo.description|default:"Описание не добавлено."|linebreaksbr }}</div>
-                    </details>
-                    <a class="btn btn-photo-link btn-sm" href="{{ photo.image.url }}" target="_blank" rel="noopener">Открыть фото</a>
+        <details class="site-submission-history site-chat-details">
+          <summary><b>История отправок и переписка</b><span class="badge">{{ plan.conversation_items|length }} сообщений</span></summary>
+          {% if plan.conversation_items %}
+            <div class="chat-thread site-chat-thread">
+              {% for item in plan.conversation_items %}
+                <div class="chat-row chat-row-{{ item.side }}">
+                  <article class="chat-bubble chat-bubble-{{ item.kind }}">
+                    <b class="chat-sender">{{ item.sender }}</b>
+                    <p>{{ item.text|linebreaksbr }}</p>
+                    {% if item.task_description %}<div class="chat-task"><b>Задание:</b> {{ item.task_description|linebreaksbr }}</div>{% endif %}
+                    {% if item.photos %}<div class="chat-photos site-chat-photos">
+                      {% for photo in item.photos %}
+                        <figure class="chat-photo">
+                          <a href="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" target="_blank" rel="noopener"><img src="{% if photo.stamped_image %}{{ photo.stamped_image.url }}{% else %}{{ photo.image.url }}{% endif %}" alt="{{ photo.photo_slot.name|default:photo.category.name|default:'Фото отчёта' }}"></a>
+                          <figcaption><b>{{ photo.photo_slot.name|default:photo.category.name|default:"Фото" }}</b>
+                            {% if photo.description %}<span>{{ photo.description|truncatechars:90 }}</span>{% endif %}
+                            {% if photo.location_address %}<span class="chat-photo-location">⌖ {{ photo.location_address }}</span>{% endif %}
+                            {% if photo.location_latitude is not None and photo.location_longitude is not None %}<a class="chat-photo-map" href="{% if photo.location_address %}https://www.openstreetmap.org/search?query={{ photo.location_address|urlencode }}{% else %}https://www.openstreetmap.org/?mlat={{ photo.location_latitude }}&mlon={{ photo.location_longitude }}#map=18/{{ photo.location_latitude }}/{{ photo.location_longitude }}{% endif %}" target="_blank" rel="noopener">Открыть геометку</a>{% endif %}
+                          </figcaption>
+                        </figure>
+                      {% endfor %}
+                    </div>{% endif %}
+                    {% if item.submission and item.kind == "submitted" %}<a class="chat-report-link" href="{% url 'submission_detail' item.submission.pk %}">Открыть отчёт</a>{% endif %}
+                    {% if item.created_at %}<time>{{ item.created_at|date:"d.m.Y H:i" }}</time>{% else %}<small class="muted">Время решения не сохранено</small>{% endif %}
                   </article>
-                {% empty %}<p class="muted">К отправке не прикреплены фотографии.</p>{% endfor %}
-              </div>
-              <a class="btn btn-light btn-sm" href="{% url 'submission_detail' submission.pk %}">Открыть отправку</a>
-            </section>
-          {% empty %}<p class="muted">По этому плану отправок пока нет.</p>{% endfor %}
-        </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}<p class="muted">По этому плану отправок пока нет.</p>{% endif %}
+        </details>
         <a class="btn btn-sm" href="{% url 'plan_detail' plan.pk %}">Открыть план</a>
       </article>
     {% empty %}<p class="muted">Планы по объекту ещё не созданы.</p>{% endfor %}
