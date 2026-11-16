@@ -134,19 +134,27 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
 }
 
-# Heroku dynos use an ephemeral filesystem. Keep media in an S3-compatible
-# bucket whenever one is configured.
+# Use an S3-compatible bucket for uploaded media when configured. This is
+# required on Render Free because its local filesystem is ephemeral.
 if os.environ.get("AWS_STORAGE_BUCKET_NAME"):
+    s3_options = {
+        "bucket_name": os.environ["AWS_STORAGE_BUCKET_NAME"],
+        "region_name": os.environ.get("AWS_S3_REGION_NAME") or None,
+        "endpoint_url": os.environ.get("AWS_S3_ENDPOINT_URL") or None,
+        "custom_domain": os.environ.get("AWS_S3_CUSTOM_DOMAIN") or None,
+        "querystring_auth": True,
+        "file_overwrite": False,
+    }
+    addressing_style = os.environ.get("AWS_S3_ADDRESSING_STYLE")
+    if addressing_style:
+        s3_options["addressing_style"] = addressing_style
+    signature_version = os.environ.get("AWS_S3_SIGNATURE_VERSION")
+    if signature_version:
+        s3_options["signature_version"] = signature_version
+
     STORAGES["default"] = {
         "BACKEND": "storages.backends.s3.S3Storage",
-        "OPTIONS": {
-            "bucket_name": os.environ["AWS_STORAGE_BUCKET_NAME"],
-            "region_name": os.environ.get("AWS_S3_REGION_NAME") or None,
-            "endpoint_url": os.environ.get("AWS_S3_ENDPOINT_URL") or None,
-            "custom_domain": os.environ.get("AWS_S3_CUSTOM_DOMAIN") or None,
-            "querystring_auth": True,
-            "file_overwrite": False,
-        },
+        "OPTIONS": s3_options,
     }
 
 if not DEBUG:

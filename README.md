@@ -20,7 +20,21 @@ Private business workspace for site plans, worker reports, and work-time trackin
 ## Render uploads
 
 - `DATA_DIR=/data` is set by the Docker image, and uploaded files are stored under `/data/media`. The app serves these files through an authenticated route that checks staff and worker access.
-- Render Free services have ephemeral filesystems and do not support persistent disks. For uploads to survive restarts and redeploys, configure an S3-compatible bucket using the variables below. A paid Render service can instead use a persistent disk mounted at `/data`.
+- Render Free services have ephemeral filesystems and do not support persistent disks. For uploads to survive restarts and redeploys, configure an S3-compatible bucket. A paid Render service can instead use a persistent disk mounted at `/data`.
+
+For Cloudflare R2, create a private bucket and an API token restricted to **Object Read & Write** for that bucket. Add these variables in the Render service's Environment settings; keep the access keys secret:
+
+```text
+AWS_STORAGE_BUCKET_NAME=<bucket name>
+AWS_ACCESS_KEY_ID=<R2 access key ID>
+AWS_SECRET_ACCESS_KEY=<R2 secret access key>
+AWS_S3_REGION_NAME=auto
+AWS_S3_ENDPOINT_URL=https://<Cloudflare account ID>.r2.cloudflarestorage.com
+AWS_S3_ADDRESSING_STYLE=path
+AWS_S3_SIGNATURE_VERSION=s3v4
+```
+
+The app keeps the bucket private and uses signed URLs to open files. For another S3-compatible provider, use its bucket, access keys, region, and endpoint instead; `AWS_S3_ADDRESSING_STYLE` and `AWS_S3_SIGNATURE_VERSION` are optional provider settings.
 
 ## Heroku uploads
 
