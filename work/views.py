@@ -5,6 +5,7 @@ from decimal import Decimal
 from io import BytesIO
 import hashlib
 import json
+import mimetypes
 import os
 import textwrap
 import time as time_module
@@ -12,6 +13,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.auth.decorators import login_required
 from django.forms import inlineformset_factory
 from django.urls import reverse_lazy
 from django.utils import timezone
@@ -27,7 +29,7 @@ from django.views.generic import (
 from django.contrib import messages
 from django.core.files.storage import default_storage
 from django.shortcuts import redirect, get_object_or_404
-from django.http import HttpResponseForbidden
+from django.http import FileResponse, Http404, HttpResponseForbidden
 from django.db.models import Case, Count, DateTimeField, IntegerField, OuterRef, Q, Subquery, Value, When
 from django.db.models.functions import Coalesce
 from django.db import IntegrityError, transaction
@@ -42,7 +44,7 @@ from .forms import (
     WorkPlanForm, WorkPhotoForm, RequiredSlotInlineFormSet,
 )
 from .models import (
-    Report, Site, SiteDocument, SitePhotoRequirement, Worker, WorkPlan,
+    PlanDocument, Report, Site, SiteDocument, SitePhotoRequirement, Worker, WorkPlan,
     WorkPhoto, WorkShift, WorkSubmission, WorkSubmissionOfficeNote, WorkSubmissionEvent, PhotoCategory,
     LocationGeocodeCache, LocationGeocodeGate,
 )
@@ -69,6 +71,54 @@ def _day_bounds(day):
     start = timezone.make_aware(datetime.combine(day, time.min), tz)
     end = timezone.make_aware(datetime.combine(day + timedelta(days=1), time.min), tz)
     return start, end
+
+
+@login_required
+def protected_media(request, name):
+    """Serve uploaded files only to staff or the worker assigned to them."""
+    referenced = (
+        SiteDocument.objects.filter(file=name).exists()
+        or PlanDocument.objects.filter(file=name).exists()
+        or Report.objects.filter(photo=name).exists()
+        or WorkPhoto.objects.filter(Q(image=name) | Q(stamped_image=name)).exists()
+    )
+    if not referenced:
+        raise Http404
+
+    allowed = request.user.is_staff or (
+        SiteDocument.objects.filter(file=name).filter(
+            Q(site__workers__user=request.user)
+            | Q(site__work_plans__worker__user=request.user)
+        ).exists()
+        or PlanDocument.objects.filter(
+            file=name, plan__worker__user=request.user,
+        ).exists()
+        or Report.objects.filter(
+            photo=name, worker__user=request.user,
+        ).exists()
+        or WorkPhoto.objects.filter(
+            Q(image=name) | Q(stamped_image=name),
+            submission__plan__worker__user=request.user,
+        ).exists()
+    )
+    if not allowed:
+        return HttpResponseForbidden()
+
+    try:
+        uploaded_file = default_storage.open(name, "rb")
+    except (FileNotFoundError, OSError, ValueError):
+        raise Http404
+
+    content_type, _ = mimetypes.guess_type(name)
+    inline = content_type == "application/pdf" or bool(
+        content_type and content_type.startswith("image/")
+    )
+    return FileResponse(
+        uploaded_file,
+        as_attachment=not inline,
+        filename=os.path.basename(name),
+        content_type=content_type or "application/octet-stream",
+    )
 
 
 def _watermark_font(size):

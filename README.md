@@ -19,8 +19,8 @@ Private business workspace for site plans, worker reports, and work-time trackin
 
 ## Render uploads
 
-- Attach a persistent disk mounted at `/data` to keep uploads across deploys. `DATA_DIR=/data` is set by the Docker image, and uploaded files are stored under `/data/media`.
-- Render does not serve `/media/` from this Django app in production. For photos and PDFs to open in the site, configure an S3-compatible bucket using the variables below; without a bucket, the files can persist on disk but are not available through the app's media URLs.
+- `DATA_DIR=/data` is set by the Docker image, and uploaded files are stored under `/data/media`. The app serves these files through an authenticated route that checks staff and worker access.
+- Render Free services have ephemeral filesystems and do not support persistent disks. For uploads to survive restarts and redeploys, configure an S3-compatible bucket using the variables below. A paid Render service can instead use a persistent disk mounted at `/data`.
 
 ## Heroku uploads
 

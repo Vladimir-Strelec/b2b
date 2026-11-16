@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path("media/<path:name>", views.protected_media, name="protected_media"),
     path("", views.DashboardView.as_view(), name="dashboard"),
     path("sites/", views.SiteListView.as_view(), name="site_list"),
     path("sites/completed/", views.CompletedSiteListView.as_view(), name="site_completed_list"),
