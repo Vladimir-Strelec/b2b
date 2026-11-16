@@ -78,6 +78,11 @@ def backfill_photo_slots_and_permit_flags(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    # The data migration updates work_site and work_photocategory, then this
+    # migration alters those same tables. On PostgreSQL, keep those writes
+    # committed before the schema changes to avoid pending trigger events.
+    atomic = False
+
     dependencies = [
         ('work', '0019_alter_photocategory_options_and_more'),
     ]
