@@ -122,7 +122,7 @@ class PhotoCategoryPhotoForm(forms.ModelForm):
 PhotoCategoryPhotoFormSet = inlineformset_factory(
     PhotoCategory, PhotoCategoryPhoto,
     form=PhotoCategoryPhotoForm,
-    extra=1,
+    extra=0,
     min_num=1,
     validate_min=True,
     max_num=10000,

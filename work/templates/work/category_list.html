@@ -21,21 +21,13 @@
       <tr>
         <td>
           <b>{{ category.name }}</b>
-          {% if not category.is_active %}<span class="status">Архивная</span>{% endif %}
         </td>
         <td>{{ category.required_photo_count }}</td>
         <td>{{ category.site_count }}</td>
         <td class="nowrap">
           <div class="actions">
             <a class="btn btn-light btn-sm" href="{% url 'site_category_edit' category.pk %}">Изменить</a>
-            {% if category.is_active %}
-              <a class="btn btn-danger btn-sm" href="{% url 'site_category_delete' category.pk %}">Удалить</a>
-            {% else %}
-              <form method="post" action="{% url 'site_category_restore' category.pk %}">
-                {% csrf_token %}
-                <button class="btn btn-light btn-sm" type="submit">Восстановить</button>
-              </form>
-            {% endif %}
+            <a class="btn btn-danger btn-sm" href="{% url 'site_category_delete' category.pk %}">Удалить</a>
           </div>
         </td>
       </tr>

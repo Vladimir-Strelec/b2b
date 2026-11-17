@@ -1265,7 +1265,7 @@ class PhotoCategoryListView(StaffRequiredMixin, ListView):
     context_object_name = "categories"
 
     def get_queryset(self):
-        return PhotoCategory.objects.annotate(
+        return PhotoCategory.objects.filter(is_active=True).annotate(
             site_count=Count("sites", distinct=True),
             required_photo_count=Count("photo_slots", distinct=True),
         )
@@ -1316,7 +1316,7 @@ class PhotoCategoryDeleteView(StaffRequiredMixin, DeleteView):
     success_url = reverse_lazy("site_category_list")
     extra_context = {
         "back": "site_category_list",
-        "warning": "Если категория уже используется объектами или отчётами, она будет скрыта от новых объектов, а история останется сохранённой.",
+        "warning": "Категория и её обязательные фотополя будут удалены. Связанные объекты и отчёты сохранятся, но их категория и список обязательных фото будут очищены.",
     }
 
     def get_context_data(self, **kwargs):
@@ -1326,27 +1326,13 @@ class PhotoCategoryDeleteView(StaffRequiredMixin, DeleteView):
 
     def form_valid(self, form):
         category = self.object
-        is_used = (
-            category.sites.exists()
-            or category.site_requirements.exists()
-            or category.photos.exists()
-        )
-        if is_used:
-            category.is_active = False
-            category.save(update_fields=["is_active"])
-            messages.success(self.request, "Категория скрыта для новых объектов. Существующие объекты и история отчётов сохранены.")
-            return redirect(self.get_success_url())
+        with transaction.atomic():
+            category.sites.update(category=None)
+            category.site_requirements.all().delete()
+            category.photos.update(category=None)
+            category.delete()
         messages.success(self.request, "Категория объекта удалена.")
-        return super().form_valid(form)
-
-
-class PhotoCategoryRestoreView(StaffRequiredMixin, View):
-    def post(self, request, pk):
-        category = get_object_or_404(PhotoCategory, pk=pk)
-        category.is_active = True
-        category.save(update_fields=["is_active"])
-        messages.success(request, "Категория объекта снова доступна для новых объектов.")
-        return redirect("site_category_list")
+        return redirect(self.get_success_url())
 
 
 class SiteUpdateView(SiteFormProcessMixin, StaffRequiredMixin, UpdateView):
