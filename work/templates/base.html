@@ -21,7 +21,7 @@
 
             <a class="{% if request.resolver_match.url_name == 'plan_list' or request.resolver_match.url_name == 'plan_create' or request.resolver_match.url_name == 'plan_edit' or request.resolver_match.url_name == 'plan_detail' or request.resolver_match.url_name == 'plan_delete' %}active{% endif %}"
                href="{% url 'plan_list' %}">Планы работы</a>
-            <a class="{% if request.resolver_match.url_name == 'site_list' or request.resolver_match.url_name == 'site_completed_list' or request.resolver_match.url_name == 'site_create' or request.resolver_match.url_name == 'site_category_create' or request.resolver_match.url_name == 'site_detail' or request.resolver_match.url_name == 'site_edit' or request.resolver_match.url_name == 'site_delete' %}active{% endif %}"
+            <a class="{% if request.resolver_match.url_name == 'site_list' or request.resolver_match.url_name == 'site_completed_list' or request.resolver_match.url_name == 'site_create' or request.resolver_match.url_name == 'site_category_list' or request.resolver_match.url_name == 'site_category_create' or request.resolver_match.url_name == 'site_category_edit' or request.resolver_match.url_name == 'site_category_delete' or request.resolver_match.url_name == 'site_category_restore' or request.resolver_match.url_name == 'site_detail' or request.resolver_match.url_name == 'site_edit' or request.resolver_match.url_name == 'site_delete' %}active{% endif %}"
                href="{% url 'site_list' %}">Объекты</a>
             <a class="{% if request.resolver_match.url_name == 'report_list' or request.resolver_match.url_name == 'report_detail' or request.resolver_match.url_name == 'submission_detail' or request.resolver_match.url_name == 'report_create' %}active{% endif %}"
                href="{% url 'report_list' %}">Отчёты</a>
@@ -34,7 +34,7 @@
             {% endif %}
         </nav>
         <div class="sidebar-foot">
-            {% if user.is_staff %}<a class="btn btn-light" href="{% url 'site_category_create' %}">＋ Создать категорию объекта</a>{% endif %}
+            {% if user.is_staff %}<a class="btn btn-light" href="{% url 'site_category_list' %}">＋ Категории объектов</a>{% endif %}
             <span class="user">{{ user.username }}</span>
             <form action="{% url 'logout' %}" method="post">
                 {% csrf_token %}

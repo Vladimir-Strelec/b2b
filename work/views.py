@@ -1235,6 +1235,7 @@ class PhotoCategoryCreateView(StaffRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["photo_formset"] = getattr(self, "photo_formset", None) or self.get_photo_formset()
+        ctx["page_title"] = "Новая категория объекта"
         return ctx
 
     def form_valid(self, form):
@@ -1256,6 +1257,96 @@ class PhotoCategoryCreateView(StaffRequiredMixin, CreateView):
     def form_invalid(self, form):
         self.photo_formset = self.get_photo_formset(data=self.request.POST)
         return super().form_invalid(form)
+
+
+class PhotoCategoryListView(StaffRequiredMixin, ListView):
+    model = PhotoCategory
+    template_name = "work/category_list.html"
+    context_object_name = "categories"
+
+    def get_queryset(self):
+        return PhotoCategory.objects.annotate(
+            site_count=Count("sites", distinct=True),
+            required_photo_count=Count("photo_slots", distinct=True),
+        )
+
+
+class PhotoCategoryUpdateView(StaffRequiredMixin, UpdateView):
+    model = PhotoCategory
+    form_class = PhotoCategoryForm
+    template_name = "work/category_form.html"
+    success_url = reverse_lazy("site_category_list")
+
+    def get_photo_formset(self, data=None):
+        return PhotoCategoryPhotoFormSet(
+            data=data,
+            instance=getattr(self, "object", None) or PhotoCategory(),
+            prefix="slots",
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["photo_formset"] = getattr(self, "photo_formset", None) or self.get_photo_formset()
+        ctx["page_title"] = "Изменить категорию объекта"
+        return ctx
+
+    def form_valid(self, form):
+        self.photo_formset = self.get_photo_formset(data=self.request.POST)
+        if not self.photo_formset.is_valid():
+            return self.form_invalid(form)
+        with transaction.atomic():
+            self.object = form.save()
+            self.photo_formset.instance = self.object
+            self.photo_formset.save()
+            for order, slot in enumerate(self.object.photo_slots.order_by("pk")):
+                if slot.order != order:
+                    slot.order = order
+                    slot.save(update_fields=["order"])
+        messages.success(self.request, "Категория объекта обновлена.")
+        return redirect(self.get_success_url())
+
+    def form_invalid(self, form):
+        self.photo_formset = self.get_photo_formset(data=self.request.POST)
+        return super().form_invalid(form)
+
+
+class PhotoCategoryDeleteView(StaffRequiredMixin, DeleteView):
+    model = PhotoCategory
+    template_name = "work/confirm_delete.html"
+    success_url = reverse_lazy("site_category_list")
+    extra_context = {
+        "back": "site_category_list",
+        "warning": "Если категория уже используется объектами или отчётами, она будет скрыта от новых объектов, а история останется сохранённой.",
+    }
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["delete_title"] = "Удаление категории объекта"
+        return ctx
+
+    def form_valid(self, form):
+        category = self.object
+        is_used = (
+            category.sites.exists()
+            or category.site_requirements.exists()
+            or category.photos.exists()
+        )
+        if is_used:
+            category.is_active = False
+            category.save(update_fields=["is_active"])
+            messages.success(self.request, "Категория скрыта для новых объектов. Существующие объекты и история отчётов сохранены.")
+            return redirect(self.get_success_url())
+        messages.success(self.request, "Категория объекта удалена.")
+        return super().form_valid(form)
+
+
+class PhotoCategoryRestoreView(StaffRequiredMixin, View):
+    def post(self, request, pk):
+        category = get_object_or_404(PhotoCategory, pk=pk)
+        category.is_active = True
+        category.save(update_fields=["is_active"])
+        messages.success(request, "Категория объекта снова доступна для новых объектов.")
+        return redirect("site_category_list")
 
 
 class SiteUpdateView(SiteFormProcessMixin, StaffRequiredMixin, UpdateView):

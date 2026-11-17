@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Новая категория объекта{% endblock %}
-{% block heading %}Новая категория объекта{% endblock %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block heading %}{{ page_title }}{% endblock %}
 {% block content %}
 <div class="card form-card">
-  <p class="muted">Создайте тип объекта и добавьте обязательные фотополя. Для каждого задайте отдельное понятное название; количество полей не ограничено.</p>
+  <p class="muted">{% if object.pk %}Измените название категории и список обязательных фото. Для каждого фото задайте отдельное понятное название.{% else %}Создайте тип объекта и добавьте обязательные фотополя. Для каждого задайте отдельное понятное название; количество полей не ограничено.{% endif %}</p>
   <form method="post" id="category-form" novalidate>
     {% csrf_token %}
     {{ form.non_field_errors }}
@@ -33,8 +33,8 @@
         </div>
       </div>
     </section>
-    <button type="submit" class="btn">Создать категорию</button>
-    <a class="btn btn-light" href="{% url 'site_list' %}">Отмена</a>
+    <button type="submit" class="btn">{% if object.pk %}Сохранить изменения{% else %}Создать категорию{% endif %}</button>
+    <a class="btn btn-light" href="{% url 'site_category_list' %}">Отмена</a>
   </form>
 </div>
 {% endblock %}

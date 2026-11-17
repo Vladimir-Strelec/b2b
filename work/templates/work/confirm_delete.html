@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Удаление{% endblock %}
-{% block heading %}Удаление{% endblock %}
+{% block title %}{{ delete_title|default:"Удаление" }}{% endblock %}
+{% block heading %}{{ delete_title|default:"Удаление" }}{% endblock %}
 {% block content %}
   <div class="card form-card">
     <p>Удалить «{{ object }}»?</p>
